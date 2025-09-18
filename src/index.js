@@ -499,7 +499,8 @@ export async function parsePacket(packet) {
 
         // Calculate identity hash from public key
         result.identityHash = await truncatedHash(result.publicKey)
-        result.address = bytesToHex(result.identityHash)
+        result.identity = bytesToHex(result.identityHash) // NomadNet UI terminology
+        result.address = result.identity // Backward compatibility
       } else {
         result.error = `Invalid announcement data length: ${data.length} < ${minLength}`
       }

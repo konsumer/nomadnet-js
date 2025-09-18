@@ -32,13 +32,13 @@ ws.on('message', async (data) => {
     switch (parsed.type) {
       case 'announce':
         console.log('📢 Announcement received:')
-        console.log(`  Address: ${parsed.address}`)
-        console.log(`  Display Name: ${parsed.displayName || '(none)'}`)
-        console.log(`  Timestamp: ${new Date(parsed.timestamp * 1000).toISOString()}`)
-        console.log(`  Dest Hash: ${prettyHash(parsed.destHash)}`)
+        console.log(`  LXMF Addr : ${prettyHash(parsed.destHash)}`)
+        console.log(`  Identity  : <${parsed.identity}>`)
+        console.log(`  Name      : ${parsed.displayName || '(none)'}`)
+        console.log(`  Timestamp : ${new Date(parsed.timestamp * 1000).toISOString()}`)
 
         // Store peer info for later messaging
-        peers.set(parsed.address, {
+        peers.set(parsed.identity, {
           publicKey: parsed.publicKey,
           encPublic: parsed.encPublic,
           sigPublic: parsed.sigPublic,
@@ -53,9 +53,9 @@ ws.on('message', async (data) => {
         const isForUs = await isMessageForIdentity(parsed, identity, 'lxmf', ['delivery'])
 
         console.log('💬 Message received:')
-        console.log(`  Dest Hash: ${prettyHash(parsed.destHash)}`)
-        console.log(`  For us: ${isForUs ? '✅ YES' : '❌ NO'}`)
-        console.log(`  Data length: ${parsed.messageData.length} bytes`)
+        console.log(`  LXMF Addr : ${prettyHash(parsed.destHash)}`)
+        console.log(`  For us    : ${isForUs ? '✅ YES' : '❌ NO'}`)
+        console.log(`  Data len  : ${parsed.messageData.length} bytes`)
 
         if (isForUs) {
           console.log('  🔐 Message is encrypted for our identity')
@@ -67,14 +67,14 @@ ws.on('message', async (data) => {
 
       case 'linkrequest':
         console.log('🔗 Link request received')
-        console.log(`  Dest Hash: ${prettyHash(parsed.destHash)}`)
-        console.log(`  Data length: ${parsed.linkData.length} bytes\n`)
+        console.log(`  LXMF Addr : ${prettyHash(parsed.destHash)}`)
+        console.log(`  Data len  : ${parsed.linkData.length} bytes\n`)
         break
 
       case 'proof':
         console.log('✓ Proof packet received')
-        console.log(`  Dest Hash: ${prettyHash(parsed.destHash)}`)
-        console.log(`  Data length: ${parsed.proofData.length} bytes\n`)
+        console.log(`  LXMF Addr : ${prettyHash(parsed.destHash)}`)
+        console.log(`  Data len  : ${parsed.proofData.length} bytes\n`)
         break
 
       case 'invalid':
@@ -83,7 +83,7 @@ ws.on('message', async (data) => {
 
       default:
         console.log(`❓ Unknown packet type: ${parsed.packetType}`)
-        console.log(`  Dest Hash: ${prettyHash(parsed.destHash)}\n`)
+        console.log(`  LXMF Addr : ${prettyHash(parsed.destHash)}\n`)
     }
   }
 })
