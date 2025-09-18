@@ -17,8 +17,8 @@ nomadnet --config test/b/nomad --rnsconfig test/b/rns
 
 - [x] Generate an identity. This might need a little work to make sure everything is in order
 - [x] Send announcements that show up in nomadnet client
-- [ ] Parse announcements (and pull out peer-pubkeys)
-- [ ] Receive messages, detect if it's for me
+- [x] Parse announcements (and pull out peer-pubkeys)
+- [ ] Receive messages, detect if it's for me. I think current problem with messages is "Link" negotiation.
 - [ ] Send message using announcement peer-pubkeys
 - [ ] Serve files over node address
 - [ ] Decrypt messages for me
