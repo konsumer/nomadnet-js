@@ -5,7 +5,6 @@
 
 import * as ed25519 from '@noble/ed25519'
 import { x25519 } from '@noble/curves/ed25519'
-import { randomBytes, createHash } from 'crypto'
 
 // =============================================================================
 // Constants
@@ -44,22 +43,26 @@ const HDLC = {
 /**
  * Compute SHA-256 hash
  */
-export function sha256(data) {
-  return new Uint8Array(createHash('sha256').update(data).digest())
+export async function sha256(data) {
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  return new Uint8Array(hashBuffer)
 }
 
 /**
  * Compute truncated hash (first 128 bits of SHA-256)
  */
-export function truncatedHash(data) {
-  return sha256(data).slice(0, TRUNCATED_HASHLENGTH / 8)
+export async function truncatedHash(data) {
+  const hash = await sha256(data)
+  return hash.slice(0, TRUNCATED_HASHLENGTH / 8)
 }
 
 /**
  * Generate a random hash
  */
-export function getRandomHash() {
-  return truncatedHash(randomBytes(TRUNCATED_HASHLENGTH / 8))
+export async function getRandomHash() {
+  const randomData = new Uint8Array(TRUNCATED_HASHLENGTH / 8)
+  crypto.getRandomValues(randomData)
+  return await truncatedHash(randomData)
 }
 
 // =============================================================================
@@ -83,7 +86,7 @@ export async function generateIdentity() {
   publicKey.set(encPublic, 0)
   publicKey.set(sigPublic, 32)
 
-  const hash = truncatedHash(publicKey)
+  const hash = await truncatedHash(publicKey)
   const hexhash = bytesToHex(hash)
 
   return {
@@ -128,7 +131,7 @@ export async function loadIdentity(privateKeyBytes) {
   publicKey.set(encPublic, 0)
   publicKey.set(sigPublic, 32)
 
-  const hash = truncatedHash(publicKey)
+  const hash = await truncatedHash(publicKey)
   const hexhash = bytesToHex(hash)
 
   return {
@@ -186,11 +189,12 @@ export function expandDestinationName(identity, appName, ...aspects) {
 /**
  * Calculate destination hash
  */
-export function destinationHash(identity, appName, ...aspects) {
+export async function destinationHash(identity, appName, ...aspects) {
   // Create name hash from expanded name
   const expandedName = expandDestinationName(null, appName, ...aspects)
   const nameBytes = new TextEncoder().encode(expandedName)
-  const nameHash = sha256(nameBytes).slice(0, NAME_HASH_LENGTH / 8)
+  const nameHashFull = await sha256(nameBytes)
+  const nameHash = nameHashFull.slice(0, NAME_HASH_LENGTH / 8)
 
   // Build address hash material
   let addrHashMaterial = nameHash
@@ -202,7 +206,7 @@ export function destinationHash(identity, appName, ...aspects) {
   }
 
   // Return truncated hash
-  return truncatedHash(addrHashMaterial)
+  return await truncatedHash(addrHashMaterial)
 }
 
 // =============================================================================
@@ -214,15 +218,17 @@ export function destinationHash(identity, appName, ...aspects) {
  */
 export async function createAnnouncement(identity, appName, aspects = [], displayName = null) {
   // Calculate destination hash
-  const destHash = destinationHash(identity, appName, ...aspects)
+  const destHash = await destinationHash(identity, appName, ...aspects)
 
   // Calculate name hash
   const expandedName = expandDestinationName(null, appName, ...aspects)
   const nameBytes = new TextEncoder().encode(expandedName)
-  const nameHash = sha256(nameBytes).slice(0, NAME_HASH_LENGTH / 8)
+  const nameHashFull = await sha256(nameBytes)
+  const nameHash = nameHashFull.slice(0, NAME_HASH_LENGTH / 8)
 
   // Generate random hash with timestamp
-  const randomPart = randomBytes(5)
+  const randomPart = new Uint8Array(5)
+  crypto.getRandomValues(randomPart)
   const timestamp = Math.floor(Date.now() / 1000)
   const timestampBytes = new Uint8Array(5)
   let ts = timestamp
@@ -377,7 +383,7 @@ export function extractHdlcFrames(buffer) {
  * @param {Uint8Array} packet - The raw packet data to parse
  * @returns {Object} Parsed packet information including type and relevant data
  */
-export function parsePacket(packet) {
+export async function parsePacket(packet) {
   if (!packet || packet.length < 19) {
     return { type: 'invalid', error: 'Packet too short' }
   }
@@ -436,7 +442,7 @@ export function parsePacket(packet) {
         result.sigPublic = result.publicKey.slice(32, 64)
 
         // Calculate identity hash from public key
-        result.identityHash = truncatedHash(result.publicKey)
+        result.identityHash = await truncatedHash(result.publicKey)
         result.address = bytesToHex(result.identityHash)
       } else {
         result.error = 'Invalid announcement data length'
@@ -477,13 +483,13 @@ export function parsePacket(packet) {
  * @param {Array} aspects - The aspects array
  * @returns {boolean} True if the message is for this identity
  */
-export function isMessageForIdentity(parsedPacket, identity, appName, aspects = []) {
+export async function isMessageForIdentity(parsedPacket, identity, appName, aspects = []) {
   if (parsedPacket.type !== 'message') {
     return false
   }
 
   // Calculate what our destination hash would be
-  const ourDestHash = destinationHash(identity, appName, ...aspects)
+  const ourDestHash = await destinationHash(identity, appName, ...aspects)
 
   // Compare destination hashes
   if (parsedPacket.destHash.length !== ourDestHash.length) {
