@@ -369,6 +369,137 @@ export function extractHdlcFrames(buffer) {
 }
 
 // =============================================================================
+// Packet Parsing
+// =============================================================================
+
+/**
+ * Parse a packet and extract relevant information based on packet type
+ * @param {Uint8Array} packet - The raw packet data to parse
+ * @returns {Object} Parsed packet information including type and relevant data
+ */
+export function parsePacket(packet) {
+  if (!packet || packet.length < 19) {
+    return { type: 'invalid', error: 'Packet too short' }
+  }
+
+  // Extract header fields
+  const flags = packet[0]
+  const hops = packet[1]
+  const packetType = flags & 0x0f
+  const destinationType = (flags >> 4) & 0x0f
+  const destHash = packet.slice(2, 18)
+  const context = packet[18]
+  const data = packet.slice(19)
+
+  // Base packet info
+  const result = {
+    type: null,
+    packetType,
+    destinationType,
+    hops,
+    destHash,
+    context,
+    raw: packet
+  }
+
+  // Parse based on packet type
+  switch (packetType) {
+    case PACKET_TYPE.ANNOUNCE:
+      result.type = 'announce'
+      // Parse announcement data structure
+      if (data.length >= 154) {
+        // Minimum: 64 (pubkey) + 10 (nameHash) + 10 (randomHash) + 64 (signature) + 6 (min app data)
+        result.publicKey = data.slice(0, 64)
+        result.nameHash = data.slice(64, 74)
+        result.randomHash = data.slice(74, 84)
+        result.signature = data.slice(84, 148)
+
+        // Extract timestamp from random hash (last 5 bytes)
+        let timestamp = 0
+        for (let i = 5; i < 10; i++) {
+          timestamp = (timestamp << 8) | result.randomHash[i]
+        }
+        result.timestamp = timestamp
+
+        // App data (display name) if present
+        if (data.length > 148) {
+          result.appData = data.slice(148)
+          try {
+            result.displayName = new TextDecoder().decode(result.appData)
+          } catch {
+            result.displayName = null
+          }
+        }
+
+        // Extract encryption and signing public keys
+        result.encPublic = result.publicKey.slice(0, 32)
+        result.sigPublic = result.publicKey.slice(32, 64)
+
+        // Calculate identity hash from public key
+        result.identityHash = truncatedHash(result.publicKey)
+        result.address = bytesToHex(result.identityHash)
+      } else {
+        result.error = 'Invalid announcement data length'
+      }
+      break
+
+    case PACKET_TYPE.DATA:
+      result.type = 'message'
+      // For messages, we need to check if destination matches our identity
+      // The actual message data would need decryption
+      result.messageData = data
+      // Caller should check if destHash matches their identity's destination hash
+      break
+
+    case PACKET_TYPE.LINKREQUEST:
+      result.type = 'linkrequest'
+      result.linkData = data
+      break
+
+    case PACKET_TYPE.PROOF:
+      result.type = 'proof'
+      result.proofData = data
+      break
+
+    default:
+      result.type = 'unknown'
+      result.data = data
+  }
+
+  return result
+}
+
+/**
+ * Check if a message packet is for a specific identity
+ * @param {Object} parsedPacket - The parsed packet from parsePacket()
+ * @param {Object} identity - The identity to check against
+ * @param {string} appName - The app name
+ * @param {Array} aspects - The aspects array
+ * @returns {boolean} True if the message is for this identity
+ */
+export function isMessageForIdentity(parsedPacket, identity, appName, aspects = []) {
+  if (parsedPacket.type !== 'message') {
+    return false
+  }
+
+  // Calculate what our destination hash would be
+  const ourDestHash = destinationHash(identity, appName, ...aspects)
+
+  // Compare destination hashes
+  if (parsedPacket.destHash.length !== ourDestHash.length) {
+    return false
+  }
+
+  for (let i = 0; i < ourDestHash.length; i++) {
+    if (parsedPacket.destHash[i] !== ourDestHash[i]) {
+      return false
+    }
+  }
+
+  return true
+}
+
+// =============================================================================
 // Utility Functions
 // =============================================================================
 
@@ -391,8 +522,6 @@ export function hexToBytes(hex) {
   }
   return bytes
 }
-
-
 
 /**
  * Format a hash for display
