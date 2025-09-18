@@ -6,6 +6,13 @@ It can do basic [LXMF](https://github.com/markqvist/LXMF) over [Reticulum](https
 
 Not complete, but it can currently push announcement messages (as a peer or node) over web-sockets. See [examples](examples/).
 
+If you want to test the remote websocket interface (same used in examples) you can do this:
+
+```sh
+nomadnet --config test/a/nomad --rnsconfig test/a/rns
+nomadnet --config test/b/nomad --rnsconfig test/b/rns
+```
+
 ### Goals
 
 - [x] Generate an identity. This might need a little work to make sure everything is in order

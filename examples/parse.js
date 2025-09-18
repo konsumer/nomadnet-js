@@ -2,14 +2,16 @@
 
 // Listen for packets and parse them to extract announcements and messages
 
-import { generateIdentity, parsePacket, isMessageForIdentity, extractHdlcFrames, bytesToHex, prettyHash } from '../index.js'
+import { generateIdentity, parsePacket, isMessageForIdentity, extractHdlcFrames, bytesToHex, prettyHash, hdlcFrame, createAnnouncement } from '../index.js'
 import WebSocket from 'ws'
 
 const WEBSOCKET_URL = 'wss://signal.konsumer.workers.dev/ws/reticulum'
 
 // Generate our identity
 const identity = await generateIdentity()
-console.log(`Our identity: ${identity.hexhash}`)
+const displayName = `Peer ${identity.hexhash.slice(0, 8)}`
+
+console.log(`Our identity (${displayName}): ${identity.hexhash}`)
 console.log('Listening for packets...\n')
 
 // Track seen peers
@@ -86,8 +88,12 @@ ws.on('message', (data) => {
   }
 })
 
-ws.on('open', () => {
+ws.on('open', async () => {
   console.log('Connected to Reticulum network\n')
+  // send an announcement so test-clients can message us
+  const frame = hdlcFrame(await createAnnouncement(identity, 'lxmf', ['delivery'], displayName))
+  console.log('Sending peer announcement')
+  await ws.send(frame)
 })
 
 ws.on('close', () => {
