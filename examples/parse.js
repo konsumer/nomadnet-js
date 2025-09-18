@@ -2,7 +2,7 @@
 
 // Listen for packets and parse them to extract announcements and messages
 
-import { generateIdentity, parsePacket, isMessageForIdentity, extractHdlcFrames, bytesToHex, prettyHash, hdlcFrame, createAnnouncement } from '../index.js'
+import { generateIdentity, parsePacket, isMessageForIdentity, extractHdlcFrames, bytesToHex, prettyHash, hdlcFrame, createAnnouncement } from '../src/index.js'
 import WebSocket from 'ws'
 
 const WEBSOCKET_URL = 'wss://signal.konsumer.workers.dev/ws/reticulum'
@@ -19,7 +19,7 @@ const peers = new Map()
 
 const ws = new WebSocket(WEBSOCKET_URL)
 
-ws.on('message', (data) => {
+ws.on('message', async (data) => {
   // Convert to Uint8Array if needed
   const buffer = new Uint8Array(data)
 
@@ -27,7 +27,7 @@ ws.on('message', (data) => {
   const frames = extractHdlcFrames(buffer)
 
   for (const frame of frames) {
-    const parsed = parsePacket(frame)
+    const parsed = await parsePacket(frame)
 
     switch (parsed.type) {
       case 'announce':
@@ -50,7 +50,7 @@ ws.on('message', (data) => {
 
       case 'message':
         // Check if message is for us (example for LXMF delivery)
-        const isForUs = isMessageForIdentity(parsed, identity, 'lxmf', ['delivery'])
+        const isForUs = await isMessageForIdentity(parsed, identity, 'lxmf', ['delivery'])
 
         console.log('💬 Message received:')
         console.log(`  Dest Hash: ${prettyHash(parsed.destHash)}`)

@@ -2,7 +2,7 @@
   "name": "nomadnet",
   "version": "0.0.1",
   "description": "JavaScript library for communicating with NomadNet (LXMF over Reticulum)",
-  "main": "index.js",
+  "main": "src/index.js",
   "type": "module",
   "scripts": {},
   "keywords": [
@@ -16,10 +16,7 @@
   ],
   "author": "konsumer",
   "license": "MIT",
-  "dependencies": {
-    "@noble/curves": "^1.2.0",
-    "@noble/ed25519": "^2.0.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "ws": "^8.18.3"
   }

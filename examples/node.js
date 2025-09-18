@@ -2,7 +2,7 @@
 
 // Create a new LXMF ID, and announce myself once as a node
 
-import { generateIdentity, createAnnouncement, hdlcFrame } from '../index.js'
+import { generateIdentity, createAnnouncement, hdlcFrame } from '../src/index.js'
 import WebSocket from 'ws'
 
 const WEBSOCKET_URL = 'wss://signal.konsumer.workers.dev/ws/reticulum'
