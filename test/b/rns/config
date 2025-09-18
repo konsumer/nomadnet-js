@@ -14,7 +14,7 @@
   [[WebRTC Tester B]]
     type = PipeInterface
     enabled = True
-    command = "node ./test/pipe.js wss://signal.konsumer.workers.dev/ws/reticulum"
+    command = "node ./test/pipe.js wss://signal.konsumer.workers.dev/ws/reticulum test/b/rns/storage/B.txt"
     respawn_delay = 5
     outgoing = True
     mode = full
