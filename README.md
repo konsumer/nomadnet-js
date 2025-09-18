@@ -6,14 +6,19 @@ It can do basic [LXMF](https://github.com/markqvist/LXMF) over [Reticulum](https
 
 Not complete, but it can currently push announcement messages (as a peer or node) over web-sockets. See [examples](examples/).
 
+If you want to test the remote websocket interface (same used in examples) you can do this:
+
+```sh
+nomadnet --config test/a/nomad --rnsconfig test/a/rns
+nomadnet --config test/b/nomad --rnsconfig test/b/rns
+```
 
 ### Goals
 
-- [X] Generate an identity. This might need a little work to make sure everything is in order
-- [X] Send announcements that show up in nomadnet client
-- [ ] Parse announcements (and pull out peer-pubkeys)
+- [x] Generate an identity. This might need a little work to make sure everything is in order
+- [x] Send announcements that show up in nomadnet client
+- [x] Parse announcements (and pull out peer-pubkeys)
+- [ ] Receive messages, detect if it's for me. I think current problem with messages is "Link" negotiation.
 - [ ] Send message using announcement peer-pubkeys
 - [ ] Serve files over node address
-- [ ] Receive messages, detect if it's for me
 - [ ] Decrypt messages for me
-

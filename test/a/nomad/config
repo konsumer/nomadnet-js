@@ -1,0 +1,42 @@
+loglevel = 4
+destination = file
+
+[client]
+
+enable_client = yes
+user_interface = text
+downloads_path = ~/Downloads
+notify_on_new_message = yes
+announce_at_start = yes
+try_propagation_on_send_fail = yes
+periodic_lxmf_sync = yes
+lxmf_sync_interval = 360
+lxmf_sync_limit = 8
+required_stamp_cost = None
+accept_invalid_stamps = False
+max_accepted_size = 500
+compact_announce_stream = yes
+
+[textui]
+
+intro_time = 1
+theme = dark
+colormode = 256
+glyphs = unicode
+mouse_enabled = True
+editor = nano
+hide_guide = no
+
+[node]
+
+enable_node = no
+node_name = None
+announce_interval = 360
+announce_at_start = Yes
+disable_propagation = Yes
+max_transfer_size = 256
+
+[printing]
+
+print_messages = No
+print_command = lp
