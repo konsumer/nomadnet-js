@@ -1,11 +1,10 @@
 {
   "name": "nomadnet",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "JavaScript library for communicating with NomadNet (LXMF over Reticulum)",
   "main": "index.js",
   "type": "module",
-  "scripts": {
-  },
+  "scripts": {},
   "keywords": [
     "nomadnet",
     "reticulum",
