@@ -4,7 +4,9 @@
   "description": "JavaScript library for communicating with NomadNet (LXMF over Reticulum)",
   "main": "src/index.js",
   "type": "module",
-  "scripts": {},
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
   "keywords": [
     "nomadnet",
     "reticulum",
@@ -16,7 +18,10 @@
   ],
   "author": "konsumer",
   "license": "MIT",
-  "dependencies": {},
+  "dependencies": {
+    "@noble/curves": "^2.0.0",
+    "msgpackr": "^1.11.5"
+  },
   "devDependencies": {
     "ws": "^8.18.3"
   }
