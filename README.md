@@ -4,7 +4,7 @@ This is a simple Javascript library for interacting with [nomadnet](https://gith
 
 It can do basic [LXMF](https://github.com/markqvist/LXMF) over [Reticulum](https://github.com/markqvist/Reticulum).
 
-The goal is to be able to interop with [nomadnet](https://github.com/markqvist/NomadNet), [reticulum-meshchat](https://github.com/liamcottle/reticulum-meshchat), in terms of transport (I will not implement mu display, or transports, just communication.)
+The goal is to be able to interop with [nomadnet](https://github.com/markqvist/NomadNet), [reticulum-meshchat](https://github.com/liamcottle/reticulum-meshchat), or [Sideband](https://github.com/markqvist/Sideband), in terms of messages (I will not implement mu display, or interface-transports, just communication.)
 
 I have some examples in [exmaples/](examples/)
 
@@ -16,11 +16,6 @@ nomadnet --config test/b/nomad --rnsconfig test/b/rns
 ```
 
 These clients (and the examples) are configured to log & interact with a remote websocket (see [here](https://github.com/konsumer/signal-worker)), which you can host yourself, if you like.
-
-
-## previous work
-
-It's based on [rns.js](https://github.com/liamcottle/rns.js/), but everything has been ported to APIs that work better on web & other JS runtimes (not just node.)
 
 ## license
 
