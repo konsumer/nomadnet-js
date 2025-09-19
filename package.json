@@ -19,7 +19,6 @@
   "author": "konsumer",
   "license": "MIT",
   "dependencies": {
-    "@noble/curves": "^2.0.0",
     "msgpackr": "^1.11.5"
   },
   "devDependencies": {
