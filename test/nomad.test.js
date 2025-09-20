@@ -1,11 +1,37 @@
 import { describe, test } from 'node:test'
-
-import { lxmfLinkMessage, generateSourceId, parseAnnouncePacket } from '../src/index.js'
+import { readFile } from 'node:fs/promises'
+import { lxmfLinkMessage, generateSourceId, parsePacket, parseAnnouncePacket, parseDataPacket, isPacketForMe } from '../src/index.js'
 
 let me
 let them
 
-const testAnnounce = new Uint8Array([0x7e, 0x21, 0x00, 0xca, 0xaf, 0xff, 0xe2, 0xfa, 0x9d, 0x5c, 0x61, 0x10, 0xce, 0x08, 0xb1, 0x75, 0xd3, 0xec, 0x54, 0x00, 0x92, 0x50, 0x9b, 0x87, 0x63, 0x9f, 0xa8, 0x32, 0x57, 0x92, 0xd6, 0x19, 0x14, 0x80, 0x31, 0xed, 0xbb, 0x2c, 0x4a, 0x58, 0x82, 0x7f, 0x53, 0x85, 0x9a, 0xd2, 0xd0, 0x39, 0x86, 0xe6, 0xeb, 0x1a, 0x5c, 0xae, 0xd0, 0x43, 0xa8, 0xe3, 0x8d, 0x7d, 0x5e, 0xde, 0xed, 0xbd, 0x7f, 0x7d, 0x5e, 0x35, 0x38, 0x59, 0x73, 0x0f, 0xea, 0x40, 0xc7, 0x47, 0xab, 0x2e, 0x09, 0x8a, 0x0e, 0xe3, 0xa0, 0x83, 0xa2, 0x87, 0x6e, 0xc6, 0x0b, 0xc3, 0x18, 0xe2, 0xc0, 0xf0, 0xd9, 0x08, 0x61, 0x77, 0xf9, 0x91, 0xa4, 0x00, 0x68, 0xcd, 0x2f, 0x97, 0xd4, 0x8f, 0xb3, 0x23, 0x26, 0x4d, 0x9b, 0x31, 0xf3, 0x5a, 0xa0, 0xf8, 0x0d, 0xaf, 0x53, 0x4e, 0x08, 0xfe, 0x79, 0x71, 0xc4, 0x1f, 0xe8, 0xb7, 0x41, 0x3b, 0xd0, 0x9b, 0x89, 0x00, 0x59, 0x35, 0x9e, 0x04, 0xe2, 0x27, 0x7a, 0xb2, 0xc3, 0x50, 0x8b, 0x37, 0x7d, 0x5d, 0x72, 0x70, 0x16, 0x9a, 0x0c, 0x59, 0x91, 0xad, 0x75, 0x6c, 0x2d, 0x68, 0x60, 0x25, 0x67, 0xb5, 0xde, 0x17, 0xce, 0x08, 0x8a, 0x96, 0xe7, 0xf2, 0xf8, 0x5e, 0xbc, 0x74, 0xd5, 0xfb, 0x4c, 0x9a, 0x0c, 0x79, 0x12, 0xfb, 0xc3, 0xff, 0x8e, 0xb4, 0x53, 0x27, 0xf8, 0xd3, 0xa3, 0xbf, 0x6c, 0x95, 0xbd, 0xe1, 0xc9, 0x18, 0x02, 0x92, 0xc4, 0x0e, 0x41, 0x6e, 0x6f, 0x6e, 0x79, 0x6d, 0x6f, 0x75, 0x73, 0x20, 0x50, 0x65, 0x65, 0x72, 0xc0, 0x7e])
+const p = (await readFile('test/testtraffic.txt', 'utf8'))
+  .split('\n')
+  .map((l) => l.trim())
+  .filter((l) => !!l)
+const packets = { sent: [], received: [] }
+
+for (const pk of p) {
+  if (pk.startsWith('S')) {
+    packets.sent.push(
+      new Uint8Array(
+        pk
+          .substring(2)
+          .split(' ')
+          .map((c) => parseInt(c, 16))
+      )
+    )
+  } else if (pk.startsWith('R')) {
+    packets.received.push(
+      new Uint8Array(
+        pk
+          .substring(2)
+          .split(' ')
+          .map((c) => parseInt(c, 16))
+      )
+    )
+  }
+}
 
 describe('Nomad', () => {
   test('generateSourceId', async ({ assert }) => {
@@ -15,8 +41,79 @@ describe('Nomad', () => {
     assert.ok(me?.x25519PublicKey)
     assert.ok(me?.keysetHash)
   })
+
+  // Test two-stage parseAnnouncePacket function
   test('parseAnnouncePacket', async ({ assert }) => {
-    them = await parseAnnouncePacket(testAnnounce)
-    console.log(them)
+    // First stage - parse basic packet structure
+    const packet = parsePacket(packets.sent[0])
+    assert.equal(packet.type, 'data')
+    assert.equal(packet.destinationType, 'group')
+    assert.equal(packet.propagationType, 'broadcast')
+
+    // Second stage - parse announce data
+    them = await parseAnnouncePacket(packet)
+    assert.ok(them?.x25519PublicKey)
+    assert.ok(them?.keysetHash)
+    assert.ok(them?.appData)
+    assert.ok(them?.destinationHash)
+    assert.ok(them?.nameHash)
+    assert.ok(them?.randomHash)
+    assert.ok(them?.signature)
+    assert.ok(them?.appHash)
+    assert.ok(them?.appRatchet)
+  })
+
+  // Test general parsePacket with traffic log
+  test('parsePacket traffic log', async ({ assert }) => {
+    const announces = []
+    const dataPackets = []
+    const linkRequests = []
+    const proofs = []
+
+    // First stage - parse all sent packets
+    for (const packetBytes of packets.sent) {
+      const packet = parsePacket(packetBytes)
+
+      // Check if addressed to me (for data packets)
+      if (packet.type === 'data' && isPacketForMe(packet, me)) {
+        packet.addressedToMe = true
+      }
+
+      switch (packet.type) {
+        case 'announce':
+          announces.push(packet)
+          break
+        case 'data':
+          // Second stage - check if it contains announce data
+          const parsed = await parseDataPacket(packet)
+          if (parsed.announce) {
+            announces.push(parsed)
+          } else {
+            dataPackets.push(packet)
+          }
+          break
+        case 'link_request':
+          linkRequests.push(packet)
+          break
+        case 'proof':
+          proofs.push(packet)
+          break
+      }
+    }
+
+    // Check that we found announce packets
+    assert.ok(announces.length > 0, 'Should have found announce packets')
+
+    // Check announce packet structure
+    if (announces.length > 0) {
+      const firstAnnounce = announces[0]
+
+      // If it's a data packet with announce, get the announce data
+      const announceData = firstAnnounce.announce || (await parseAnnouncePacket(firstAnnounce))
+
+      assert.ok(announceData?.x25519PublicKey)
+      assert.ok(announceData?.keysetHash)
+      assert.ok(announceData?.appData)
+    }
   })
 })
