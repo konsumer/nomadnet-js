@@ -1,0 +1,32 @@
+# Only the most basic options are included in this default
+# configuration. To see a more verbose, and much longer,
+# configuration example, you can run the command:
+# rnsd --exampleconfig
+
+[reticulum]
+enable_transport = False
+share_instance = No
+instance_name = demoA
+
+[logging]
+# Valid log levels are 0 through 7:
+#   0: Log only critical information
+#   1: Log errors and lower log levels
+#   2: Log warnings and lower log levels
+#   3: Log notices and lower log levels
+#   4: Log info and lower (this is the default)
+#   5: Verbose logging
+#   6: Debug logging
+#   7: Extreme logging
+
+loglevel = 7
+
+[interfaces]
+[[Default Interface]]
+type = AutoInterface
+interface_enabled = False
+
+[[Konsumer Websocket]]
+type = WebsocketClientInterface
+interface_enabled = True
+target_url = "wss://signal.konsumer.workers.dev/ws/reticulum"

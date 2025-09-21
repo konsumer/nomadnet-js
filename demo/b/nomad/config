@@ -1,0 +1,49 @@
+[logging]
+# Valid log levels are 0 through 7:
+#   0: Log only critical information
+#   1: Log errors and lower log levels
+#   2: Log warnings and lower log levels
+#   3: Log notices and lower log levels
+#   4: Log info and lower (this is the default)
+#   5: Verbose logging
+#   6: Debug logging
+#   7: Extreme logging
+
+loglevel = 7
+destination = file
+
+[client]
+enable_client = yes
+user_interface = text
+downloads_path = ~/Downloads
+notify_on_new_message = yes
+announce_at_start = yes
+try_propagation_on_send_fail = yes
+periodic_lxmf_sync = yes
+lxmf_sync_interval = 360
+lxmf_sync_limit = 8
+required_stamp_cost = None
+accept_invalid_stamps = no
+max_accepted_size = 500
+compact_announce_stream = yes
+
+[textui]
+intro_time = 1
+theme = dark
+colormode = 256
+glyphs = unicode
+mouse_enabled = yes
+editor = nano
+hide_guide = yes
+
+[node]
+enable_node = no
+node_name = None
+announce_interval = 360
+announce_at_start = yes
+disable_propagation = yes
+max_transfer_size = 256
+
+[printing]
+print_messages = no
+print_command = lp
