@@ -1,4 +1,4 @@
-import { ed25519 } from '@noble/curves/ed25519.js'
+// import { ed25519 } from '@noble/curves/ed25519.js'
 
 export const PACKET_DATA = 0 // Data packets
 export const PACKET_ANNOUNCE = 1 // Announces
@@ -86,12 +86,14 @@ export async function parseReticulum(packetData) {
 }
 
 export async function parseAndVerifyAnnounce({ reticulum: { data, destinationHash, contextFlag } }) {
-  const keysize = 64 // Identity.KEYSIZE//8 (32 bytes each for encryption + signing keys)
-  const nameHashLen = 10 // Identity.nameHashLenGTH//8
-  const sigLen = 64 // Identity.SIGLENGTH//8
-  const ratchetsize = 32 // Identity.RATCHETSIZE//8
+  const keysize = 64
+  const nameHashLen = 10
+  const sigLen = 64
+  const ratchetsize = 32
 
   const publicKey = data.slice(0, keysize)
+  const keyVerifyBytes = publicKey.slice(32)
+  const keyEncryptBytes = publicKey.slice(0, 32)
 
   let nameHash
   let randomHash
@@ -121,163 +123,25 @@ export async function parseAndVerifyAnnounce({ reticulum: { data, destinationHas
     appData = new Uint8Array()
   }
 
-  const keyVerify = publicKey.slice(32)
-  const keyEncrypt = publicKey.slice(0, 32)
+  const keyEncrypt = await crypto.subtle.importKey(
+    'raw',
+    keyEncryptBytes,
+    { name: 'X25519' },
+    false,
+    [] // No direct operations, used for key agreement
+  )
 
-  const verified = ed25519.verify(signature, signedData, keyVerify)
+  const keyVerify = await crypto.subtle.importKey('raw', keyVerifyBytes, { name: 'Ed25519' }, true, ['verify'])
 
   return {
+    identity: hex(new Uint8Array(await crypto.subtle.digest('SHA-256', publicKey)), '').substr(0, 32),
+    lxmf: hex(new Uint8Array(await crypto.subtle.digest('SHA-256', destinationHash)), '').substr(0, 32),
     appData,
     // ratchet,
     keyVerify,
     keyEncrypt,
-    verified
+    keyVerifyBytes,
+    keyEncryptBytes,
+    verify: async () => crypto.subtle.verify('Ed25519', keyVerify, signature, signedData)
   }
 }
-
-/*
-export async function parseAndVerifyAnnounce(out) {
-  const data = out.reticulum.data
-
-  // Constants from Identity.py
-  const keysize = 64 // Identity.KEYSIZE//8 (32 bytes each for encryption + signing keys)
-  const nameHashLen = 10 // Identity.nameHashLenGTH//8
-  const sigLen = 64 // Identity.SIGLENGTH//8
-  const ratchetsize = 32 // Identity.RATCHETSIZE//8
-
-  if (!data || data.length < keysize + nameHashLen + 10 + sigLen) {
-    throw new Error('Announce packet too short')
-  }
-
-  // Extract public key (first 64 bytes - 32 for encryption + 32 for signing)
-  const publicKey = data.slice(0, keysize)
-
-  let nameHash, randomHash, signature, appData, ratchet
-
-  // Check if this announce contains a ratchet (you'll need to determine this from your packet parsing)
-  // For now, assuming no ratchet (context_flag not set)
-  const hasRatchet = false // You need to set this based on packet.context_flag
-
-  if (hasRatchet) {
-    nameHash = data.slice(keysize, keysize + nameHashLen)
-    randomHash = data.slice(keysize + nameHashLen, keysize + nameHashLen + 10)
-    ratchet = data.slice(keysize + nameHashLen + 10, keysize + nameHashLen + 10 + ratchetsize)
-    signature = data.slice(keysize + nameHashLen + 10 + ratchetsize, keysize + nameHashLen + 10 + ratchetsize + sigLen)
-
-    if (data.length > keysize + nameHashLen + 10 + sigLen + ratchetsize) {
-      appData = data.slice(keysize + nameHashLen + 10 + sigLen + ratchetsize)
-    } else {
-      appData = new Uint8Array(0)
-    }
-  } else {
-    ratchet = new Uint8Array(0)
-    nameHash = data.slice(keysize, keysize + nameHashLen)
-    randomHash = data.slice(keysize + nameHashLen, keysize + nameHashLen + 10)
-    signature = data.slice(keysize + nameHashLen + 10, keysize + nameHashLen + 10 + sigLen)
-
-    if (data.length > keysize + nameHashLen + 10 + sigLen) {
-      appData = data.slice(keysize + nameHashLen + 10 + sigLen)
-    } else {
-      appData = new Uint8Array(0)
-    }
-  }
-
-  // The signed data is: destination_hash + publicKey + nameHash + randomHash + ratchet + appData
-  const signedData = new Uint8Array(out.reticulum.destinationHash.length + publicKey.length + nameHash.length + randomHash.length + ratchet.length + appData.length)
-
-  let offset = 0
-  signedData.set(out.reticulum.destinationHash, offset)
-  offset += out.reticulum.destinationHash.length
-  signedData.set(publicKey, offset)
-  offset += publicKey.length
-  signedData.set(nameHash, offset)
-  offset += nameHash.length
-  signedData.set(randomHash, offset)
-  offset += randomHash.length
-  signedData.set(ratchet, offset)
-  offset += ratchet.length
-  signedData.set(appData, offset)
-
-  // Extract just the Ed25519 signing public key (last 32 bytes of the 64-byte public key)
-  const signingPublicKey = publicKey.slice(32, 64)
-
-  console.log(
-    'Public key (full):',
-    Array.from(publicKey)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')
-  )
-  console.log(
-    'Signing public key:',
-    Array.from(signingPublicKey)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')
-  )
-  console.log(
-    'Name hash:',
-    Array.from(nameHash)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')
-  )
-  console.log(
-    'Random hash:',
-    Array.from(randomHash)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')
-  )
-  console.log(
-    'Signature:',
-    Array.from(signature)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')
-  )
-  console.log('App data:', new TextDecoder().decode(appData))
-  console.log(
-    'Signed data:',
-    Array.from(signedData)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')
-  )
-
-  try {
-    const cryptoKey = await crypto.subtle.importKey(
-      'raw',
-      signingPublicKey,
-      {
-        name: 'Ed25519'
-      },
-      false,
-      ['verify']
-    )
-
-    const isValid = await crypto.subtle.verify('Ed25519', cryptoKey, signature, signedData)
-
-    return {
-      publicKey: publicKey,
-      signingPublicKey: signingPublicKey,
-      nameHash: nameHash,
-      randomHash: randomHash,
-      signature: signature,
-      appData: appData,
-      ratchet: ratchet,
-      isValid: isValid,
-      destinationHash: out.reticulum.destinationHash
-    }
-  } catch (error) {
-    console.error('Signature verification failed:', error)
-    return {
-      publicKey: publicKey,
-      signingPublicKey: signingPublicKey,
-      nameHash: nameHash,
-      randomHash: randomHash,
-      signature: signature,
-      appData: appData,
-      ratchet: ratchet,
-      isValid: false,
-      destinationHash: out.reticulum.destinationHash,
-      error: error.message
-    }
-  }
-}
-
-*/
