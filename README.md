@@ -6,7 +6,7 @@ It can do basic [LXMF](https://github.com/markqvist/LXMF) over [Reticulum](https
 
 The goal is to be able to inter-operate with [nomadnet](https://github.com/markqvist/NomadNet), [reticulum-meshchat](https://github.com/liamcottle/reticulum-meshchat), or [Sideband](https://github.com/markqvist/Sideband), in terms of messages (I will not implement mu display, or interface-transports, just communication.)
 
-I am doing all my testing over a websocket, so it will work on web & native in a similar way, but this library is really about identity-management and LXMF packet-handling, and should work over nay transport. I favor simple utility-functions over stateful management classes.
+I am doing all my testing over a websocket, so it will work on web & native in a similar way, but this library is really about identity-management and LXMF packet-handling, and should work over nay transport.
 
 ## examples
 

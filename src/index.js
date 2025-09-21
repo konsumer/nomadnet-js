@@ -1,4 +1,5 @@
-// import { ed25519 } from '@noble/curves/ed25519.js'
+import { x25519 } from '@noble/curves/ed25519.js'
+import { randomBytes } from '@noble/curves/utils.js'
 
 export const PACKET_DATA = 0 // Data packets
 export const PACKET_ANNOUNCE = 1 // Announces
@@ -67,6 +68,7 @@ export async function parseReticulum(packetData) {
   }
 
   if (out.reticulum.packetType === PACKET_ANNOUNCE) {
+    // TODO: move to DestinationIdentity
     out.announce = await parseAndVerifyAnnounce(out)
   }
   if (out.reticulum.packetType === PACKET_DATA) {
@@ -114,7 +116,7 @@ export async function parseAndVerifyAnnounce({ reticulum: { data, destinationHas
     randomHash = data.slice(keysize + nameHashLen, keysize + nameHashLen + 10)
     signature = data.slice(keysize + nameHashLen + 10, keysize + nameHashLen + 10 + sigLen)
     if (data.length > keysize + nameHashLen + 10 + sigLen) {
-      appData = data.sllice(keysize + nameHashLen + 10 + sigLen)
+      appData = data.slice(keysize + nameHashLen + 10 + sigLen) // Fixed typo: sllice -> slice
     }
   }
 
@@ -137,11 +139,151 @@ export async function parseAndVerifyAnnounce({ reticulum: { data, destinationHas
     identity: hex(new Uint8Array(await crypto.subtle.digest('SHA-256', publicKey)), '').substr(0, 32),
     lxmf: hex(new Uint8Array(await crypto.subtle.digest('SHA-256', destinationHash)), '').substr(0, 32),
     appData,
-    // ratchet,
     keyVerify,
     keyEncrypt,
     keyVerifyBytes,
     keyEncryptBytes,
     verify: async () => crypto.subtle.verify('Ed25519', keyVerify, signature, signedData)
   }
+}
+
+// Create a link request packet
+export async function createLinkRequest(sender, destination) {
+  // Generate ephemeral X25519 key for this link
+  const linkPrivateKey = randomBytes(32) // Fixed: use randomBytes directly
+  const linkPublicKey = x25519.getPublicKey(linkPrivateKey)
+
+  // Generate link ID
+  const linkId = randomBytes(16)
+
+  // Get destination hash
+  const destinationHash = await destination.getDestinationHash(destination.aspectFilter)
+
+  // Build link request data
+  const linkRequestData = new Uint8Array([
+    ...linkPublicKey, // 32 bytes
+    ...linkId // 16 bytes
+  ])
+
+  // Sign the link request
+  const signature = await sender.sign(new Uint8Array([...destinationHash, ...sender.identityHash, ...linkRequestData]))
+
+  // Complete link request payload
+  const payload = new Uint8Array([...linkRequestData, ...signature])
+
+  // Build packet
+  const packet = new Uint8Array(2 + 16 + 1 + payload.length)
+
+  packet[0] = 0x00 | PACKET_LINKREQ // Link request type
+  packet[1] = 0x00 // Hops
+  packet.set(destinationHash, 2)
+  packet[18] = PACKET_CONTEXT_NONE
+  packet.set(payload, 19)
+
+  // Return packet and link info for later use
+  return {
+    packet,
+    link: {
+      id: linkId,
+      privateKey: linkPrivateKey,
+      publicKey: linkPublicKey,
+      sharedSecret: x25519.getSharedSecret(linkPrivateKey, destination.encryptPublicKey)
+    }
+  }
+}
+
+// Create an announce packet from sender identity
+export async function createAnnounce(sender, appData = null, useRatchet = false) {
+  const destinationHash = await sender.getDestinationHash(sender.aspectFilter)
+
+  // Random hash for announce uniqueness
+  const randomHash = randomBytes(10)
+
+  // Prepare ratchet if needed
+  const ratchet = useRatchet ? randomBytes(32) : new Uint8Array()
+
+  // Convert app data to bytes
+  const appBytes = appData ? new TextEncoder().encode(appData) : new Uint8Array()
+
+  // Build signed data: destinationHash + publicKey + nameHash + randomHash + ratchet + appData
+  const signedData = new Uint8Array([...destinationHash, ...sender.publicKey, ...(sender.nameHash || new Uint8Array(10)), ...randomHash, ...ratchet, ...appBytes])
+
+  // Sign the data
+  const signature = await sender.sign(signedData)
+
+  // Build announce data based on whether we have ratchet
+  let announceData
+  if (useRatchet) {
+    announceData = new Uint8Array([...sender.publicKey, ...(sender.nameHash || new Uint8Array(10)), ...randomHash, ...ratchet, ...signature, ...appBytes])
+  } else {
+    announceData = new Uint8Array([...sender.publicKey, ...(sender.nameHash || new Uint8Array(10)), ...randomHash, ...signature, ...appBytes])
+  }
+
+  // Build complete packet
+  // [FLAGS:1][HOPS:1][DESTINATION:16][CONTEXT:1][DATA:varies]
+  const packet = new Uint8Array(2 + 16 + 1 + announceData.length)
+
+  // Set header flags
+  packet[0] = 0x00 | PACKET_ANNOUNCE // Announce packet type
+  if (useRatchet) packet[0] |= 0x20 // Set context flag if ratchet
+  packet[1] = 0x00 // Hops
+
+  // Set destination hash
+  packet.set(destinationHash, 2)
+
+  // Set context (not used for announce)
+  packet[18] = 0x00
+
+  // Set announce data
+  packet.set(announceData, 19)
+
+  return packet
+}
+
+// Send encrypted message to identity (after link established)
+export async function createLinkedMessage(sender, destination, message, link) {
+  // Derive AES key from shared secret
+  const keyMaterial = await crypto.subtle.importKey('raw', link.sharedSecret, { name: 'HKDF' }, false, ['deriveKey'])
+
+  const aesKey = await crypto.subtle.deriveKey(
+    {
+      name: 'HKDF',
+      salt: link.id, // Use link ID as salt
+      info: new TextEncoder().encode('reticulum-msg'),
+      hash: 'SHA-256'
+    },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt']
+  )
+
+  // Encrypt message
+  const iv = randomBytes(12)
+  const messageBytes = new TextEncoder().encode(message)
+
+  const encrypted = await crypto.subtle.encrypt(
+    {
+      name: 'AES-GCM',
+      iv: iv,
+      tagLength: 128
+    },
+    aesKey,
+    messageBytes
+  )
+
+  // Build payload: [LINK_ID:16][IV:12][CIPHERTEXT+TAG:varies]
+  const payload = new Uint8Array([...link.id, ...iv, ...new Uint8Array(encrypted)])
+
+  // Build packet
+  const destinationHash = await destination.getDestinationHash()
+  const packet = new Uint8Array(2 + 16 + 1 + payload.length)
+
+  packet[0] = 0x00 | PACKET_DATA // Data packet
+  packet[1] = 0x00 // Hops
+  packet.set(destinationHash, 2)
+  packet[18] = PACKET_CONTEXT_NONE
+  packet.set(payload, 19)
+
+  return packet
 }
