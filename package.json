@@ -20,10 +20,12 @@
   "license": "MIT",
   "dependencies": {
     "@noble/curves": "^2.0.0",
+    "@noble/ed25519": "^3.0.0",
     "@noble/hashes": "^2.0.0",
     "msgpackr": "^1.11.5"
   },
   "devDependencies": {
+    "hexy": "^0.3.5",
     "ws": "^8.18.3"
   }
 }
