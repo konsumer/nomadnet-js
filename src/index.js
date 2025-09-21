@@ -1,4 +1,4 @@
-import { verify } from '@noble/ed25519'
+import { ed25519 } from '@noble/curves/ed25519.js'
 
 export const PACKET_DATA = 0 // Data packets
 export const PACKET_ANNOUNCE = 1 // Announces
@@ -121,13 +121,16 @@ export async function parseAndVerifyAnnounce({ reticulum: { data, destinationHas
     appData = new Uint8Array()
   }
 
-  // TODO: this throws
-  const verified = verify(signature, signedData, publicKey)
+  const keyVerify = publicKey.slice(32)
+  const keyEncrypt = publicKey.slice(0, 32)
+
+  const verified = ed25519.verify(signature, signedData, keyVerify)
 
   return {
     appData,
-    ratchet,
-    publicKey,
+    // ratchet,
+    keyVerify,
+    keyEncrypt,
     verified
   }
 }
