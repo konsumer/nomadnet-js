@@ -6,62 +6,61 @@ A Reticulum packet is composed of the following fields:
 [HEADER 2 bytes] [ADDRESSES 16/32 bytes] [CONTEXT 1 byte] [DATA 0-465 bytes]
 ```
 
-* The HEADER field is 2 bytes long.
-  * Byte 1: `[IFAC Flag], [Header Type], [Propagation Type], [Destination Type] and [Packet Type]`
-  * Byte 2: Number of hops
+- The HEADER field is 2 bytes long.
 
-* Interface Access Code field if the IFAC flag was set.
-  * The length of the Interface Access Code can vary from
+  - Byte 1: `[IFAC Flag], [Header Type], [Propagation Type], [Destination Type] and [Packet Type]`
+  - Byte 2: Number of hops
+
+- Interface Access Code field if the IFAC flag was set.
+
+  - The length of the Interface Access Code can vary from
     1 to 64 bytes according to physical interface
     capabilities and configuration.
 
-* The ADDRESSES field contains either 1 or 2 addresses.
-  * Each address is 16 bytes long.
-  * The Header Type flag in the HEADER field determines
+- The ADDRESSES field contains either 1 or 2 addresses.
+
+  - Each address is 16 bytes long.
+  - The Header Type flag in the HEADER field determines
     whether the ADDRESSES field contains 1 or 2 addresses.
-  * Addresses are SHA-256 hashes truncated to 16 bytes.
+  - Addresses are SHA-256 hashes truncated to 16 bytes.
 
-* The CONTEXT field is 1 byte.
-  * It is used by Reticulum to determine packet context.
+- The CONTEXT field is 1 byte.
 
-* The DATA field is between 0 and 465 bytes.
-  * It contains the packets data payload.
+  - It is used by Reticulum to determine packet context.
 
-IFAC Flag
------------------
-open             0  Packet for publically accessible interface
-authenticated    1  Interface authentication is included in packet
+- The DATA field is between 0 and 465 bytes.
+  - It contains the packets data payload.
 
+## IFAC Flag
 
-Header Types
------------------
-type 1           0  Two byte header, one 16 byte address field
-type 2           1  Two byte header, two 16 byte address fields
+open 0 Packet for publically accessible interface
+authenticated 1 Interface authentication is included in packet
 
+## Header Types
 
-Propagation Types
------------------
-broadcast       00
-transport       01
-reserved        10
-reserved        11
+type 1 0 Two byte header, one 16 byte address field
+type 2 1 Two byte header, two 16 byte address fields
 
+## Propagation Types
 
-Destination Types
------------------
-single          00
-group           01
-plain           10
-link            11
+broadcast 00
+transport 01
+reserved 10
+reserved 11
 
+## Destination Types
 
-Packet Types
------------------
-data            00
-announce        01
-link request    10
-proof           11
+single 00
+group 01
+plain 10
+link 11
 
+## Packet Types
+
+data 00
+announce 01
+link request 10
+proof 11
 
 ### Packet Example
 
@@ -80,6 +79,7 @@ proof           11
 ```
 
 ### Packet Example
+
 ```
 
    HEADER FIELD   DESTINATION FIELD   CONTEXT FIELD  DATA FIELD
@@ -96,6 +96,7 @@ proof           11
 ```
 
 ### Packet Example
+
 ```
 
    HEADER FIELD     IFAC FIELD    DESTINATION FIELD   CONTEXT FIELD  DATA FIELD
@@ -118,9 +119,9 @@ packet types. The size listed are the complete on-
 wire size counting all fields including headers,
 but excluding any interface access codes.
 
-- Path Request    :    51  bytes
-- Announce        :    167 bytes
-- Link Request    :    83  bytes
-- Link Proof      :    115 bytes
-- Link RTT packet :    99  bytes
-- Link keepalive  :    20  bytes
+- Path Request : 51 bytes
+- Announce : 167 bytes
+- Link Request : 83 bytes
+- Link Proof : 115 bytes
+- Link RTT packet : 99 bytes
+- Link keepalive : 20 bytes

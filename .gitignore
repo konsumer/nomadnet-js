@@ -4,3 +4,4 @@ storage/
 *.log
 logfile
 __pycache__
+*.msgpack
