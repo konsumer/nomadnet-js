@@ -14,17 +14,14 @@ client.on('error', ({ detail }) => {
   console.error('ERROR', detail)
 })
 
+// periodically announce ourself
 async function annouce() {
   const p = await createAnnounce(sender)
   console.log('Sending announce:', hex(p, ' '))
   client.send(p)
 }
-
 setInterval(annouce, ANNOUNCE_INTERVAL)
-
-client.on('open', () => {
-  annouce()
-})
+client.on('open', () => { annouce() })
 
 // handle incoming announces
 client.on('announce', async ({ detail: { raw, reticulum, announce } }) => {
