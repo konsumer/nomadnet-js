@@ -121,23 +121,25 @@ export class SenderIdentity extends ReticulmIdentity {
   }
 
   // Generate new identity
+  // Replace the generate method in SenderIdentity
   static async generate(aspectName = null) {
     const sender = new SenderIdentity()
 
     // Generate X25519 key pair for encryption
-    sender.encryptPrivateKey = randomBytes(32) // Fixed: use randomBytes directly
+    sender.encryptPrivateKey = randomBytes(32)
     sender.encryptPublicKey = x25519.getPublicKey(sender.encryptPrivateKey)
 
-    // Generate Ed25519 key pair for signing
-    sender.signPrivateKey = randomBytes(32) // Fixed: use randomBytes directly
-    sender.signPublicKey = ed25519.getPublicKey(sender.signPrivateKey)
-
-    // Also create Web Crypto version for signing
+    // Generate Ed25519 key pair - use Web Crypto as primary
     sender.signKeyPair = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify'])
 
-    // Export the Web Crypto public key to ensure consistency
+    // Export keys to raw bytes for consistency with Reticulum
     const webCryptoPublicKey = await crypto.subtle.exportKey('raw', sender.signKeyPair.publicKey)
     sender.signPublicKey = new Uint8Array(webCryptoPublicKey)
+
+    // Export private key in PKCS8 format, then extract the raw 32 bytes
+    const webCryptoPrivateKey = await crypto.subtle.exportKey('pkcs8', sender.signKeyPair.privateKey)
+    // Extract the 32-byte private key from PKCS8 (last 32 bytes)
+    sender.signPrivateKey = new Uint8Array(webCryptoPrivateKey).slice(-32)
 
     // Combine public keys as Reticulum does
     sender.publicKey = new Uint8Array([
@@ -145,6 +147,8 @@ export class SenderIdentity extends ReticulmIdentity {
       ...sender.signPublicKey // Last 32: Ed25519
     ])
 
+    // Set aspect filter and calculate name hash if provided
+    sender.aspectFilter = aspectName
     if (aspectName) {
       const nameData = new TextEncoder().encode(aspectName)
       const nameFullHash = await crypto.subtle.digest('SHA-256', nameData)
