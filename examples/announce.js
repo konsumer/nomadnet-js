@@ -14,16 +14,6 @@ client.on('error', ({ detail }) => {
   console.error('ERROR', detail)
 })
 
-// client.on('message', ({ detail: { raw, reticulum } }) => {
-//   console.log('MESSAGE:', message)
-//   console.log(hex(raw, ' '))
-// })
-
-client.on('announce', async ({ detail: { raw, reticulum, announce } }) => {
-  console.log('ANNOUNCE:', { reticulum, announce })
-  console.log(hex(raw, ' '))
-})
-
 async function annouce() {
   const p = await createAnnounce(sender)
   console.log('Sending announce:', hex(p, ' '))
@@ -34,4 +24,10 @@ setInterval(annouce, ANNOUNCE_INTERVAL)
 
 client.on('open', () => {
   annouce()
+})
+
+// handle incoming announces
+client.on('announce', async ({ detail: { raw, reticulum, announce } }) => {
+  console.log('ANNOUNCE:', { reticulum, announce })
+  console.log(hex(raw, ' '))
 })

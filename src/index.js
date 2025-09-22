@@ -1,6 +1,9 @@
 import { x25519 } from '@noble/curves/ed25519.js'
 import { randomBytes } from '@noble/curves/utils.js'
 
+export * from './identity.js'
+export { InterfaceType } from './interfaces/interface.js'
+
 export const PACKET_DATA = 0 // Data packets
 export const PACKET_ANNOUNCE = 1 // Announces
 export const PACKET_LINKREQ = 2 // Link requests
@@ -193,8 +196,14 @@ export async function createLinkRequest(sender, destination) {
 }
 
 // Create an announce packet from sender identity
+// REPLACE the createAnnounce function in index.js (around line 130):
+
 export async function createAnnounce(sender, appData = null, useRatchet = false) {
+  // Get the destination hash - this will also set sender.nameHash correctly
   const destinationHash = await sender.getDestinationHash(sender.aspectFilter)
+
+  // Use the nameHash that was just calculated/set by getDestinationHash
+  const nameHashToUse = sender.nameHash || new Uint8Array(10)
 
   // Random hash for announce uniqueness
   const randomHash = randomBytes(10)
@@ -206,35 +215,30 @@ export async function createAnnounce(sender, appData = null, useRatchet = false)
   const appBytes = appData ? new TextEncoder().encode(appData) : new Uint8Array()
 
   // Build signed data: destinationHash + publicKey + nameHash + randomHash + ratchet + appData
-  const signedData = new Uint8Array([...destinationHash, ...sender.publicKey, ...(sender.nameHash || new Uint8Array(10)), ...randomHash, ...ratchet, ...appBytes])
+  const signedData = new Uint8Array([...destinationHash, ...sender.publicKey, ...nameHashToUse, ...randomHash, ...ratchet, ...appBytes])
 
   // Sign the data
   const signature = await sender.sign(signedData)
 
-  // Build announce data based on whether we have ratchet
+  // Build announce data using the exact same nameHash
   let announceData
   if (useRatchet) {
-    announceData = new Uint8Array([...sender.publicKey, ...(sender.nameHash || new Uint8Array(10)), ...randomHash, ...ratchet, ...signature, ...appBytes])
+    announceData = new Uint8Array([...sender.publicKey, ...nameHashToUse, ...randomHash, ...ratchet, ...signature, ...appBytes])
   } else {
-    announceData = new Uint8Array([...sender.publicKey, ...(sender.nameHash || new Uint8Array(10)), ...randomHash, ...signature, ...appBytes])
+    announceData = new Uint8Array([...sender.publicKey, ...nameHashToUse, ...randomHash, ...signature, ...appBytes])
   }
 
   // Build complete packet
-  // [FLAGS:1][HOPS:1][DESTINATION:16][CONTEXT:1][DATA:varies]
   const packet = new Uint8Array(2 + 16 + 1 + announceData.length)
 
-  // Set header flags
-  packet[0] = 0x00 | PACKET_ANNOUNCE // Announce packet type
-  if (useRatchet) packet[0] |= 0x20 // Set context flag if ratchet
-  packet[1] = 0x00 // Hops
+  // Set flags
+  packet[0] = 0x00 | PACKET_ANNOUNCE
+  if (useRatchet) packet[0] |= 0x20
+  packet[1] = 0x00
 
-  // Set destination hash
+  // Use the destination hash we calculated at the start
   packet.set(destinationHash, 2)
-
-  // Set context (not used for announce)
   packet[18] = 0x00
-
-  // Set announce data
   packet.set(announceData, 19)
 
   return packet

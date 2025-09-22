@@ -26,30 +26,18 @@ export class ReticulmIdentity {
       return this.identityHash
     }
 
-    // Calculate name hash for aspect
+    // Always recalculate nameHash to ensure consistency
     const nameData = new TextEncoder().encode(aspectName)
     const nameFullHash = await crypto.subtle.digest('SHA-256', nameData)
-    this.nameHash = new Uint8Array(nameFullHash).slice(0, 10)
+    const nameHash = new Uint8Array(nameFullHash).slice(0, 10)
+
+    // Store it for consistency in announce creation
+    this.nameHash = nameHash
 
     // Destination hash = truncate(sha256(identityHash + nameHash))
-    const combined = new Uint8Array([...this.identityHash, ...this.nameHash])
+    const combined = new Uint8Array([...this.identityHash, ...nameHash])
     const destHash = await crypto.subtle.digest('SHA-256', combined)
     return new Uint8Array(destHash).slice(0, 16)
-  }
-
-  // Serialize to compact base64 string
-  serialize() {
-    const data = {
-      pk: btoa(String.fromCharCode(...this.publicKey)),
-      nh: this.nameHash ? btoa(String.fromCharCode(...this.nameHash)) : null,
-      af: this.aspectFilter
-    }
-    return btoa(JSON.stringify(data))
-  }
-
-  // Helper to convert to hex for display
-  toString() {
-    return hex(this.identityHash, '', true).substring(0, 16)
   }
 }
 
@@ -121,7 +109,6 @@ export class SenderIdentity extends ReticulmIdentity {
   }
 
   // Generate new identity
-  // Replace the generate method in SenderIdentity
   static async generate(aspectName = null) {
     const sender = new SenderIdentity()
 
@@ -129,17 +116,12 @@ export class SenderIdentity extends ReticulmIdentity {
     sender.encryptPrivateKey = randomBytes(32)
     sender.encryptPublicKey = x25519.getPublicKey(sender.encryptPrivateKey)
 
-    // Generate Ed25519 key pair - use Web Crypto as primary
+    // Generate Ed25519 key pair for signing
     sender.signKeyPair = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify'])
 
-    // Export keys to raw bytes for consistency with Reticulum
+    // Export keys to raw bytes
     const webCryptoPublicKey = await crypto.subtle.exportKey('raw', sender.signKeyPair.publicKey)
     sender.signPublicKey = new Uint8Array(webCryptoPublicKey)
-
-    // Export private key in PKCS8 format, then extract the raw 32 bytes
-    const webCryptoPrivateKey = await crypto.subtle.exportKey('pkcs8', sender.signKeyPair.privateKey)
-    // Extract the 32-byte private key from PKCS8 (last 32 bytes)
-    sender.signPrivateKey = new Uint8Array(webCryptoPrivateKey).slice(-32)
 
     // Combine public keys as Reticulum does
     sender.publicKey = new Uint8Array([
@@ -147,13 +129,9 @@ export class SenderIdentity extends ReticulmIdentity {
       ...sender.signPublicKey // Last 32: Ed25519
     ])
 
-    // Set aspect filter and calculate name hash if provided
+    // Store aspect filter but DON'T calculate nameHash yet
+    // Let getDestinationHash() handle it to ensure consistency
     sender.aspectFilter = aspectName
-    if (aspectName) {
-      const nameData = new TextEncoder().encode(aspectName)
-      const nameFullHash = await crypto.subtle.digest('SHA-256', nameData)
-      sender.nameHash = new Uint8Array(nameFullHash).slice(0, 10)
-    }
 
     await sender.init()
     return sender
