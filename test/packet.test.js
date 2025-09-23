@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert'
 import { bytesToHex, hexToBytes } from '@noble/curves/utils.js'
-import { unpackHeader, verifyAnnounce, buildAnnounce, PACKET_ANNOUNCE } from '../src/index.js'
+import { unserializeIdentity, unpackHeader, verifyAnnounce, buildAnnounce, PACKET_ANNOUNCE } from '../src/index.js'
 
 // this is real traffic
 // xxd -c 0 -p logfile.bin
@@ -10,9 +10,7 @@ const packetAnnounceBytes = hexToBytes('2100848ee1c5fa95580b9801e1932590e3cb0023
 // this was pulled from nomad identity file
 // rnid -x -i demo/a/nomad/storage/identity
 // id 4b48cec75f96ed134c76cae364820a47
-const keyBytes = hexToBytes('308a69c6e147ea856912d2377e56e0c9560ea2f9da0e7743009499b6a262b846ea748b08ea8f473111ff2e63ed24603991da24a40745a9a93f53616a8d35d47c')
-const encPriv = keyBytes.slice(0, 32)
-const sigPriv = keyBytes.slice(32)
+const { encPriv, sigPriv } = unserializeIdentity('308a69c6e147ea856912d2377e56e0c9560ea2f9da0e7743009499b6a262b846ea748b08ea8f473111ff2e63ed24603991da24a40745a9a93f53616a8d35d47c')
 
 let packet
 

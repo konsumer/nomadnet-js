@@ -1,5 +1,5 @@
 import { ed25519, x25519 } from '@noble/curves/ed25519.js'
-import { hexToBytes, concatBytes } from '@noble/curves/utils.js'
+import { hexToBytes, bytesToHex, concatBytes } from '@noble/curves/utils.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { unpack, pack } from 'msgpackr'
 
@@ -34,6 +34,19 @@ export const CONTEXT_LRPROOF = 0xff // Packet is a link request proof
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
+
+export const serializeIdentity = ({ encPriv, sigPriv }) => bytesToHex(new Uint8Array([...encPriv, ...sigPriv]))
+export const unserializeIdentity = (s) => {
+  const keyBytes = hexToBytes(s)
+  return {
+    encPriv: keyBytes.slice(0, 32),
+    sigPriv: keyBytes.slice(32)
+  }
+}
+
+const keyBytes = hexToBytes('308a69c6e147ea856912d2377e56e0c9560ea2f9da0e7743009499b6a262b846ea748b08ea8f473111ff2e63ed24603991da24a40745a9a93f53616a8d35d47c')
+const encPriv = keyBytes.slice(0, 32)
+const sigPriv = keyBytes.slice(32)
 
 // Generate identity keys
 export function generateIdentity() {
