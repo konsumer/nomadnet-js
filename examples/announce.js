@@ -17,7 +17,7 @@ ws.on('error', ({ message }) => {
 // periodically announce ourself
 async function annouce() {
   const p = await buildAnnounce({ encPriv, sigPriv, appName: 'lxmf', aspects: ['delivery'], peerName: 'test peer' })
-  console.log('Sending announce:', bytesToHex(p.packet, ' '))
+  console.log('Sending announce:', p)
   ws.send(p.packet)
 }
 setInterval(annouce, ANNOUNCE_INTERVAL)
@@ -31,6 +31,6 @@ ws.on('message', (data) => {
   console.log('Received', p)
   if (p.packetType === PACKET_ANNOUNCE) {
     const a = verifyAnnounce(p)
-    console.log(a)
+    console.log('ANNOUNCE', a)
   }
 })
