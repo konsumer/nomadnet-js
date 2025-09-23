@@ -1,12 +1,13 @@
 import { bytesToHex } from '@noble/curves/utils.js'
-import { generateIdentity, deriveLxmfAddress, unpackHeader, verifyAnnounce, buildAnnounce, PACKET_ANNOUNCE } from '../src/index.js'
+import { generateIdentity, pubFromPrivate, getLxmfIdentity, unpackHeader, verifyAnnounce, buildAnnounce, PACKET_ANNOUNCE } from '../src/index.js'
 
 import WebSocket from 'ws'
 
 const { RETICULUM_WS_URL = 'wss://signal.konsumer.workers.dev/ws/reticulum', ANNOUNCE_INTERVAL = 30000 } = process.env
 
 const { encPriv, sigPriv } = generateIdentity()
-const lxmf = deriveLxmfAddress({ encPriv, sigPriv })
+const { encPub, sigPub } = pubFromPrivate({ encPriv, sigPriv })
+const lxmf = getLxmfIdentity({ encPub, sigPub })
 
 const ws = new WebSocket(RETICULUM_WS_URL)
 

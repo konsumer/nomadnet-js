@@ -3,10 +3,10 @@ import { ed25519 } from '@noble/curves/ed25519.js'
 import assert from 'node:assert'
 import { hexToBytes, bytesToHex } from '@noble/curves/utils.js'
 
-import { unserializeIdentity, serializeIdentity, generateIdentity, deriveLxmfAddress } from '../src/index.js'
+import { unserializeIdentity, serializeIdentity, generateIdentity, pubFromPrivate, getLxmfIdentity } from '../src/index.js'
 
 let key
-let lxmf
+let pub
 
 const encoder = new TextEncoder()
 
@@ -30,14 +30,20 @@ describe('Identity', () => {
     assert.ok(p.sigPriv)
   })
 
-  test('deriveLxmfAddress', () => {
-    // get pubkey and LXMF address
-    lxmf = deriveLxmfAddress(key)
-    assert.equal(bytesToHex(lxmf.destinationHash), '848ee1c5fa95580b9801e1932590e3cb')
+  test('pubFromPrivate', () => {
+    pub = pubFromPrivate(key)
+    assert.ok(pub.encPub)
+    assert.ok(pub.sigPub)
 
     // use priv to sign, then verify with pub
     const msg = encoder.encode('cool test')
     const sig = ed25519.sign(msg, key.sigPriv)
-    assert.ok(ed25519.verify(sig, msg, lxmf.sigPub))
+    assert.ok(ed25519.verify(sig, msg, pub.sigPub))
+  })
+
+  test('getLxmfIdentity', () => {
+    // LXMF address
+    const lxmf = getLxmfIdentity(pub)
+    assert.equal(bytesToHex(lxmf.destinationHash), '848ee1c5fa95580b9801e1932590e3cb')
   })
 })

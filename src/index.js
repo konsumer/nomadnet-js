@@ -52,17 +52,19 @@ export function generateIdentity() {
   return { encPriv, sigPriv }
 }
 
-// TODO: seperate getting pub for identity and getting destinationHash from pubs
-
-// get the LXMF address from your keys
-export function deriveLxmfAddress({ encPriv, sigPriv }) {
-  const encPub = x25519.getPublicKey(encPriv) // 32 bytes
-  const sigPub = ed25519.getPublicKey(sigPriv) // 32 bytes
-  const nameHash = sha256(encoder.encode('lxmf.delivery')).slice(0, 10) // 10 bytes
+// get LXMF address info from pubkeys
+export function getLxmfIdentity({ encPub, sigPub, name = 'lxmf.delivery' }) {
+  const nameHash = sha256(encoder.encode(name)).slice(0, 10) // 10 bytes
   const pubBlob = concatBytes(encPub, sigPub) // get_public_key() equivalent
   const identityHash = sha256(pubBlob).slice(0, 16) // 16 bytes
   const destinationHash = sha256(concatBytes(nameHash, identityHash)).slice(0, 16) // 16 bytes
-  return { destinationHash, identityHash, encPub, sigPub } // Uint8Arrays
+  return { identityHash, destinationHash }
+}
+
+export function pubFromPrivate({ encPriv, sigPriv }) {
+  const encPub = x25519.getPublicKey(encPriv) // 32 bytes
+  const sigPub = ed25519.getPublicKey(sigPriv) // 32 bytes
+  return { encPub, sigPub }
 }
 
 // Unpack a reticulum packet header
