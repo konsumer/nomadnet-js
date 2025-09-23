@@ -1,3 +1,5 @@
+// This will announce itself and show announces, from a websoocket
+
 import { bytesToHex } from '@noble/curves/utils.js'
 import { generateIdentity, getLxmfIdentity, unpackHeader, verifyAnnounce, buildAnnounce, PACKET_ANNOUNCE } from '../src/index.js'
 

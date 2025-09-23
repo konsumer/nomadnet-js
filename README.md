@@ -4,13 +4,13 @@ This is a simple Javascript library for interacting with [nomadnet](https://gith
 
 It can do basic [LXMF](https://github.com/markqvist/LXMF) over [Reticulum](https://github.com/markqvist/Reticulum).
 
-The goal is to be able to inter-operate with [nomadnet](https://github.com/markqvist/NomadNet), [reticulum-meshchat](https://github.com/liamcottle/reticulum-meshchat), or [Sideband](https://github.com/markqvist/Sideband), in terms of messages (I will not implement mu display, or interface-transports, just communication.)
+The goal is to be able to inter-operate with [nomadnet](https://github.com/markqvist/NomadNet), [reticulum-meshchat](https://github.com/liamcottle/reticulum-meshchat), or [Sideband](https://github.com/markqvist/Sideband), in terms of messages (I will not implement mu display, or interface-transports, just basic communication.)
 
 I am doing all my testing over a websocket, so it will work on web & native in a similar way, but this library is really about identity-management and LXMF packet-handling, and should work over nay transport.
 
 ## examples
 
-I have some examples in [exmaples/](examples/)
+I have some examples in [examples/](examples/)
 
 If you want to test multiple clients on a network with the examples, you can do this:
 
