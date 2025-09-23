@@ -53,7 +53,12 @@ export function generateIdentity() {
 }
 
 // get LXMF address info from pubkeys
-export function getLxmfIdentity({ encPub, sigPub, name = 'lxmf.delivery' }) {
+export function getLxmfIdentity({ encPub, sigPub, encPriv, sigPriv, name = 'lxmf.delivery' }) {
+  if (encPriv && sigPriv) {
+    const p = pubFromPrivate({ encPriv, sigPriv })
+    encPub = p.encPub
+    sigPub = p.sigPub
+  }
   const nameHash = sha256(encoder.encode(name)).slice(0, 10) // 10 bytes
   const pubBlob = concatBytes(encPub, sigPub) // get_public_key() equivalent
   const identityHash = sha256(pubBlob).slice(0, 16) // 16 bytes
