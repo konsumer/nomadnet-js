@@ -63,7 +63,7 @@ export function getLxmfIdentity({ encPub, sigPub, encPriv, sigPriv, name = 'lxmf
   const pubBlob = concatBytes(encPub, sigPub) // get_public_key() equivalent
   const identityHash = sha256(pubBlob).slice(0, 16) // 16 bytes
   const destinationHash = sha256(concatBytes(nameHash, identityHash)).slice(0, 16) // 16 bytes
-  return { identityHash, destinationHash }
+  return { identityHash, destinationHash, encPub, sigPub }
 }
 
 export function pubFromPrivate({ encPriv, sigPriv }) {
