@@ -1,7 +1,8 @@
 // This will announce itself and show announces, from a websoocket
+// when it receives an LXMF message it will respond
 
 import { bytesToHex } from '@noble/curves/utils.js'
-import { generateIdentity, getLxmfIdentity, pubFromPrivate, unpackReticulum, parseAnnounce, buildAnnounce, PACKET_ANNOUNCE } from '../src/index.js'
+import { generateIdentity, getLxmfIdentity, pubFromPrivate, unpackReticulum, parseAnnounce, parseLxmf, buildAnnounce, PACKET_ANNOUNCE, PACKET_DATA, DESTINATION_SINGLE } from '../src/index.js'
 
 import WebSocket from 'ws'
 
@@ -9,7 +10,7 @@ const { RETICULUM_WS_URL = 'wss://signal.konsumer.workers.dev/ws/reticulum', ANN
 
 const { encPriv, sigPriv } = generateIdentity()
 const { encPub, sigPub } = pubFromPrivate({ encPriv, sigPriv })
-const lxmf = getLxmfIdentity({ encPub, sigPub })
+const self = getLxmfIdentity(pubFromPrivate({ encPub, sigPub }))
 
 const ws = new WebSocket(RETICULUM_WS_URL)
 
@@ -37,5 +38,12 @@ ws.on('message', (data) => {
   if (p.packetType === PACKET_ANNOUNCE) {
     const a = parseAnnounce(p)
     console.log('ANNOUNCE from', bytesToHex(p.destinationHash))
+  }
+
+  if (p.packetType === PACKET_DATA) {
+    if (p.destinationType === DESTINATION_SINGLE && bytesToHex(p.destinationHash) === bytesToHex(lxmf.destinationHash)) {
+      const lxm = parseLxmf(p, { encPriv, sigPriv })
+      console.log(lxm)
+    }
   }
 })
