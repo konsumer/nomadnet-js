@@ -9,6 +9,12 @@ export const PACKET_ANNOUNCE = 1
 export const PACKET_LINKREQUEST = 2
 export const PACKET_PROOF = 3
 
+// Destination type constants (match RNS.Destination types)
+export const DESTINATION_SINGLE = 0x00 // Single (encrypted)
+export const DESTINATION_GROUP = 0x01 // Group (shared key)
+export const DESTINATION_PLAIN = 0x02 // Plaintext
+export const DESTINATION_LINK = 0x03 // Link (uses link_id in header)
+
 // Packet context-types
 export const CONTEXT_NONE = 0x00 // Generic data packet
 export const CONTEXT_RESOURCE = 0x01 // Packet is part of a resource
@@ -242,4 +248,132 @@ export function buildAnnounce({
     sigPub, // 32B
     signature // 64B
   }
+}
+
+// Generate ephemeral link keys (initiator side)
+export function generateLinkKeys() {
+  const lkEncPriv = x25519.utils.randomSecretKey() // 32B
+  const lkSigPriv = ed25519.utils.randomSecretKey() // 32B
+  const lkEncPub = x25519.getPublicKey(lkEncPriv) // 32B
+  const lkSigPub = ed25519.getPublicKey(lkSigPriv) // 32B
+  return { lkEncPriv, lkSigPriv, lkEncPub, lkSigPub }
+}
+
+// Compute truncated packet hash (link_id) like RNS.Packet.getTruncatedHash()
+export function getPacketTruncatedHash(rawPacket) {
+  const flagsLow = Uint8Array.of(rawPacket[0] & 0x0f)
+  const headerType = (rawPacket[0] & 0b01000000) >> 6
+  // For headerType=1 (transport header), exclude transportId (16B) like upstream
+  const tail = headerType === 1 ? rawPacket.slice(2 + 16) : rawPacket.slice(2)
+  const hashable = concatBytes(flagsLow, tail)
+  return sha256(hashable).slice(0, 16) // 16B truncated hash
+}
+
+// Build a PACKET_LINKREQUEST: payload = lkEncPub || lkSigPub (64B), unencrypted
+export function buildLinkRequest({
+  destinationHash, // Uint8Array(16) of remote SINGLE destination
+  hops = 0x00,
+  headerType = 0,
+  transportId = undefined,
+  transportType = 0,
+  destinationType = DESTINATION_SINGLE,
+  // optional pre-supplied ephemeral keys
+  lkEncPriv = undefined,
+  lkSigPriv = undefined
+} = {}) {
+  if (!destinationHash || destinationHash.length !== 16) {
+    throw new Error('destinationHash must be 16 bytes')
+  }
+
+  let keys = { lkEncPriv, lkSigPriv }
+  if (!lkEncPriv || !lkSigPriv) keys = generateLinkKeys()
+  const lkEncPub = x25519.getPublicKey(keys.lkEncPriv)
+  const lkSigPub = ed25519.getPublicKey(keys.lkSigPriv)
+
+  const payload = concatBytes(lkEncPub, lkSigPub) // 32+32 = 64
+  const packet = buildReticulum({
+    packetType: PACKET_LINKREQUEST,
+    headerType,
+    transportId,
+    transportType,
+    destinationType, // SINGLE
+    hops,
+    destinationHash,
+    context: CONTEXT_NONE,
+    contextFlag: 0,
+    payload
+  })
+
+  const linkId = getPacketTruncatedHash(packet) // 16B
+  return {
+    packet,
+    linkId,
+    lkEncPriv: keys.lkEncPriv,
+    lkSigPriv: keys.lkSigPriv,
+    lkEncPub,
+    lkSigPub
+  }
+}
+
+// Build an PACKET_PROOF: header destination = linkId, destType = LINK, payload = signature
+// Destination signs: sign(link_id || dest_enc_pub || dest_sig_pub) with long-term sigPriv
+export function buildLinkProof({
+  linkId, // Uint8Array(16) computed from the original link request
+  destEncPriv, // 32B long-term encryption private key (X25519) - not used here but kept for symmetry
+  destSigPriv, // 32B long-term signing private key (Ed25519)
+  // If public keys are already known, they can be supplied to avoid recompute
+  destEncPub = undefined,
+  destSigPub = undefined,
+  hops = 0x00,
+  headerType = 0,
+  transportId = undefined,
+  transportType = 0
+} = {}) {
+  if (!linkId || linkId.length !== 16) throw new Error('linkId must be 16 bytes')
+  if (!destSigPriv) throw new Error('destSigPriv (Ed25519) is required')
+
+  // Derive public keys from privates if not provided
+  const encPub = destEncPub || x25519.getPublicKey(destEncPriv)
+  const sigPub = destSigPub || ed25519.getPublicKey(destSigPriv)
+
+  // Signature over link_id || dest_enc_pub || dest_sig_pub
+  const signedData = concatBytes(linkId, encPub, sigPub)
+  const signature = ed25519.sign(signedData, destSigPriv) // 64B
+
+  const packet = buildReticulum({
+    packetType: PACKET_PROOF,
+    headerType,
+    transportId,
+    transportType,
+    destinationType: DESTINATION_LINK, // special: header carries linkId
+    hops,
+    destinationHash: linkId,
+    context: CONTEXT_LRPROOF,
+    contextFlag: 0,
+    payload: signature // not encrypted
+  })
+
+  return { packet, signature, linkId, destEncPub: encPub, destSigPub: sigPub }
+}
+
+// Validate an PACKET_PROOF (output form similar to verifyAnnounce(unpackHeader(...)))
+// packet: result of unpackHeader(proofRaw)
+// Requires known destination long-term enc/sig public keys (from announce/identity)
+export function validateProof(packet, { destEncPub, destSigPub } = {}) {
+  if (!packet || packet.packetType !== PACKET_PROOF) throw new Error('Not a PROOF packet')
+  if (packet.context !== CONTEXT_LRPROOF) throw new Error('Not an LRPROOF')
+  if (!destEncPub || !destSigPub) throw new Error('Destination public keys required')
+
+  const out = { ...packet }
+  const sig_len = 64
+
+  // LRPROOF payload is just the Ed25519 signature
+  out.signature = packet.data.slice(0, sig_len)
+  out.linkId = packet.destinationHash // header field is the 16B link id
+
+  // Verify signature over link_id || dest_enc_pub || dest_sig_pub
+  const signedData = concatBytes(out.linkId, destEncPub, destSigPub)
+  out.verified = ed25519.verify(out.signature, signedData, destSigPub)
+
+  return out
 }
