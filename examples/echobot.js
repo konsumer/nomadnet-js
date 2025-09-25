@@ -2,7 +2,7 @@
 // when it receives an LXMF message it will respond
 
 import { bytesToHex } from '@noble/curves/utils.js'
-import { generateIdentity, getLxmfIdentity, pubFromPrivate, unpackReticulum, parseAnnounce, parseLxmf, buildAnnounce, PACKET_ANNOUNCE, PACKET_DATA, DESTINATION_SINGLE } from '../src/index.js'
+import { generateIdentity, getLxmfIdentity, pubFromPrivate, unpackReticulum, parseAnnounce, buildAnnounce, generateRatchetKeypair, PACKET_ANNOUNCE, PACKET_DATA, DESTINATION_SINGLE } from '../src/index.js'
 
 import WebSocket from 'ws'
 
@@ -10,7 +10,10 @@ const { RETICULUM_WS_URL = 'wss://signal.konsumer.workers.dev/ws/reticulum', ANN
 
 const { encPriv, sigPriv } = generateIdentity()
 const { encPub, sigPub } = pubFromPrivate({ encPriv, sigPriv })
-const self = getLxmfIdentity(pubFromPrivate({ encPub, sigPub }))
+const { destinationHash, identityHash } = getLxmfIdentity({ encPub, sigPub })
+
+// in a normal application this would be stored & rotated
+let { ratchetPriv, ratchetPub } = generateRatchetKeypair()
 
 const ws = new WebSocket(RETICULUM_WS_URL)
 
@@ -20,20 +23,21 @@ ws.on('error', ({ message }) => {
 
 // periodically announce ourself
 async function annouce() {
-  const p = await buildAnnounce({ encPriv, sigPriv, appName: 'lxmf', aspects: ['delivery'], peerName: 'test peer' })
+  const p = await buildAnnounce({ encPriv, sigPriv, appName: 'lxmf', aspects: ['delivery'], peerName: 'test peer', ratchet: ratchetPub, transportType: 2, destinationType: 0, data: 0 })
   // console.log('Sending', p)
   console.log('ANNOUNCE myself')
   ws.send(p.packet)
 }
 
 ws.on('open', () => {
-  console.log(`Connected to ${RETICULUM_WS_URL} on LXMF: ${bytesToHex(lxmf.destinationHash)}`)
+  console.log(`Connected to ${RETICULUM_WS_URL} on LXMF: ${bytesToHex(destinationHash)}`)
   annouce()
   setInterval(annouce, ANNOUNCE_INTERVAL)
 })
 
 ws.on('message', (data) => {
   const p = unpackReticulum(data)
+
   // console.log('Received', p)
   if (p.packetType === PACKET_ANNOUNCE) {
     const a = parseAnnounce(p)
@@ -41,9 +45,8 @@ ws.on('message', (data) => {
   }
 
   if (p.packetType === PACKET_DATA) {
-    if (p.destinationType === DESTINATION_SINGLE && bytesToHex(p.destinationHash) === bytesToHex(lxmf.destinationHash)) {
-      const lxm = parseLxmf(p, { encPriv, sigPriv })
-      console.log(lxm)
+    if (p.destinationType === DESTINATION_SINGLE && bytesToHex(p.destinationHash) === bytesToHex(destinationHash)) {
+      console.log('message to me', p)
     }
   }
 })

@@ -169,6 +169,14 @@ export function buildReticulum({
   return concatBytes(header, payload)
 }
 
+// Create a new ratchet private key (32 bytes) and derive its public key (32 bytes)
+export function generateRatchetKeypair() {
+  const ratchetPriv = new Uint8Array(32)
+  crypto.getRandomValues(ratchetPriv) // 32 random bytes
+  const ratchetPub = x25519.getPublicKey(ratchetPriv) // 32-byte X25519 public key
+  return { ratchetPriv, ratchetPub }
+}
+
 // Build ANNOUNCE packet directly from a 64-byte identity hex
 export function buildAnnounce({
   encPriv,
@@ -242,135 +250,5 @@ export function buildAnnounce({
     encPub, // 32B
     sigPub, // 32B
     signature // 64B
-  }
-}
-
-// Decrypts the DATA field from unpackReticulum()
-// params:
-// - packet: output of unpackReticulum(buffer)
-// - keys: { encPriv, sigPriv, peerEncPub?, groupKey?, info?, salt? }
-// returns { plaintext, verifiedAuth }
-export function decryptDataPacket(packet, keys = {}) {
-  const { destinationType, data } = packet
-
-  // Plaintext case
-  if (destinationType === DESTINATION_PLAIN) {
-    return { plaintext: data, verifiedAuth: false }
-  }
-
-  // Expect a framed blob: [ephemeralHeader|cipher|tag]
-  // A practical minimal framing:
-  // - 32B ephPub (for SINGLE) or 0B (for GROUP)
-  // - 16B iv
-  // - ciphertext...
-  // - 32B hmac tag at end
-  if (data.length < IV_LEN + HMAC_TAG_LEN + (destinationType === DESTINATION_SINGLE ? 32 : 0)) {
-    throw new Error('DATA too short')
-  }
-
-  let offset = 0
-  let sharedSecret = null
-
-  if (destinationType === DESTINATION_SINGLE) {
-    const ephPub = data.slice(0, 32)
-    offset += 32
-    if (!keys.encPriv) throw new Error('encPriv required for SINGLE')
-    // ECDH: X25519
-    sharedSecret = x25519.getSharedSecret(keys.encPriv, ephPub)
-  } else if (destinationType === DESTINATION_GROUP) {
-    if (!keys.groupKey || keys.groupKey.length !== AES_KEY_LEN) {
-      throw new Error('groupKey (32B) required for GROUP')
-    }
-    // Use group key as IKM
-    sharedSecret = keys.groupKey
-  } else {
-    throw new Error('Unsupported destinationType for decryption')
-  }
-
-  const iv = data.slice(offset, offset + IV_LEN)
-  offset += IV_LEN
-  const tag = data.slice(data.length - HMAC_TAG_LEN)
-  const ciphertext = data.slice(offset, data.length - HMAC_TAG_LEN)
-
-  // Derive encKey and authKey via HKDF-SHA256
-  const salt = keys.salt || iv
-  const info = keys.info || encoder.encode('reticulum-lxmf-data')
-  const okm = hkdfSha256(sharedSecret, salt, info, AES_KEY_LEN + AES_KEY_LEN)
-  const encKey = okm.slice(0, AES_KEY_LEN)
-  const authKey = okm.slice(AES_KEY_LEN)
-
-  // Verify HMAC over (header parts helpful): destinationHash || context || iv || ciphertext
-  // Including destinationHash and context binds to routing metadata while keeping source private
-  const macInput = concatBytes(packet.destinationHash, Uint8Array.of(packet.context), iv, ciphertext)
-  const calc = hmacSha256(authKey, macInput)
-  const verifiedAuth = bytesToHex(calc) === bytesToHex(tag)
-  if (!verifiedAuth) throw new Error('HMAC verification failed')
-
-  // AES-256-CBC decrypt
-  const aesCbc = cbc(aes(encKey), iv)
-  const plaintext = aesCbc.decrypt(ciphertext)
-
-  return { plaintext, verifiedAuth }
-}
-
-// Parse LXMF envelope + decrypt payload into structured message.
-// packet: output of unpackReticulum
-// keys: passed to decryptDataPacket (encPriv, groupKey, etc.)
-// returns object with fields and verification flags
-export function parseLxmf(packet, keys = {}) {
-  if (packet.packetType !== PACKET_DATA) {
-    throw new Error('Not a DATA packet')
-  }
-  // If a specific context is used for LXMF in this app, enforce it:
-  // if (packet.context !== LXMF_CONTEXT) throw new Error('Unexpected context');
-
-  // Envelope layout (outer, not encrypted):
-  // 16B destination || 16B source || 64B signature || encryptedPayload...
-  const minEnv = 16 + 16 + 64 + 1
-  if (packet.data.length < minEnv) throw new Error('LXMF envelope too short')
-
-  const dst = packet.data.slice(0, 16)
-  const src = packet.data.slice(16, 32)
-  const signature = packet.data.slice(32, 96)
-  const encryptedPayload = packet.data.slice(96)
-
-  // Decrypt inner payload with decryptDataPacket applied to a "sub-packet"
-  const subPacket = { ...packet, data: encryptedPayload }
-  const { plaintext, verifiedAuth } = decryptDataPacket(subPacket, keys)
-
-  // Expect msgpack list [timestamp, content, title, fields]
-  let parts
-  try {
-    parts = unpack(plaintext)
-  } catch (e) {
-    throw new Error('Invalid LXMF payload msgpack')
-  }
-  if (!Array.isArray(parts) || parts.length < 4) {
-    throw new Error('Invalid LXMF payload structure')
-  }
-  const [timestamp, content, title, fields] = parts
-
-  // Compute message-id = SHA256(dst || src || payload)
-  const msgId = SHA256(concatBytes(dst, src, plaintext))
-
-  // Verify Ed25519 signature over (dst || src || payload || msgId)
-  // Caller must provide sender’s sig public key to verify (peerSigPub).
-  let sigVerified = false
-  if (keys.peerSigPub) {
-    const toVerify = concatBytes(dst, src, plaintext, msgId)
-    sigVerified = ed25519.verify(signature, toVerify, keys.peerSigPub)
-  }
-
-  return {
-    destination: dst,
-    source: src,
-    signature,
-    msgId,
-    timestamp,
-    content,
-    title,
-    fields: fields || {},
-    authVerified: verifiedAuth,
-    sigVerified
   }
 }

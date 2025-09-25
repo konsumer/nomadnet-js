@@ -1,4 +1,4 @@
-// This will simply output traffic logs
+// This will simply output traffic logs on a websocket
 
 import { bytesToHex } from '@noble/curves/utils.js'
 import { unpackReticulum, PACKET_DATA, PACKET_ANNOUNCE, PACKET_LINKREQUEST, PACKET_PROOF } from '../src/index.js'
@@ -22,9 +22,6 @@ packetTypeNames[PACKET_PROOF] = 'PROOF'
 ws.on('message', (data) => {
   const p = unpackReticulum(data)
   let destinationAddress = bytesToHex(p.destinationHash)
-  let sourceAddress = 'None'
-  if (p.souceHash) {
-    sourceAddress = bytesToHex(p.souceHash)
-  }
-  console.log(`${packetTypeNames[p.packetType]} packet ${sourceAddress}:${destinationAddress}: `, bytesToHex(data))
+  console.log(`${packetTypeNames[p.packetType]} packet dst:${destinationAddress}: `, bytesToHex(data))
+  console.log(p)
 })
