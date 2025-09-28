@@ -11,6 +11,7 @@ const { RETICULUM_WS_URL = 'wss://signal.konsumer.workers.dev/ws/reticulum', ANN
 const { encPriv, sigPriv } = generateIdentity()
 const { encPub, sigPub } = pubFromPrivate({ encPriv, sigPriv })
 const { destinationHash, identityHash } = getLxmfIdentity({ encPub, sigPub })
+const destinationHex = bytesToHex(destinationHash)
 
 // in a normal application this would be stored & rotated
 let { ratchetPriv, ratchetPub } = generateRatchetKeypair()
@@ -30,7 +31,7 @@ async function annouce() {
 }
 
 ws.on('open', () => {
-  console.log(`Connected to ${RETICULUM_WS_URL} on LXMF: ${bytesToHex(destinationHash)}`)
+  console.log(`Connected to ${RETICULUM_WS_URL} on LXMF: ${destinationHex}`)
   annouce()
   setInterval(annouce, ANNOUNCE_INTERVAL)
 })
@@ -45,8 +46,10 @@ ws.on('message', (data) => {
   }
 
   if (p.packetType === PACKET_DATA) {
-    if (p.destinationType === DESTINATION_SINGLE && bytesToHex(p.destinationHash) === bytesToHex(destinationHash)) {
+    if (p.destinationType === DESTINATION_SINGLE && bytesToHex(p.destinationHash) === destinationHex) {
       console.log('message to me', p)
+      // TODO: read this message
+      // TODO: respond to this message with same text
     }
   }
 })
