@@ -33,6 +33,8 @@ def decrypt(identity, ciphertext_token):
   peer_pub_bytes = ciphertext_token[:RNS.Identity.KEYSIZE//8//2]
   peer_pub = RNS.Cryptography.X25519PublicKey.from_public_bytes(peer_pub_bytes)
   ciphertext = ciphertext_token[RNS.Identity.KEYSIZE//8//2:]
+  salt = identity.get_salt()
+  context = identity.get_context()
   # try all ratchets
   for r in RNS.Identity.known_ratchets:
     ratchet = RNS.Identity.known_ratchets[r]
@@ -43,14 +45,16 @@ def decrypt(identity, ciphertext_token):
     derived_key = RNS.Cryptography.hkdf(
         length=RNS.Identity.DERIVED_KEY_LENGTH,
         derive_from=shared_key,
-        salt=identity.get_salt(),
-        context=identity.get_context())
+        salt=salt,
+        context=context)
     try:
       token = RNS.Cryptography.Token(derived_key)
       plaintext = token.decrypt(ciphertext)
       return plaintext
     except Exception as e:
       print(f"Ratchet: {r.hex()}: {e}")
+      print("  salt:", salt.hex())
+      print("  context:", context)
       pass
 
 
