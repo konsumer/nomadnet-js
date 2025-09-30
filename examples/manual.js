@@ -9,6 +9,8 @@ import { cbc } from '@noble/ciphers/aes.js'
 import { hmac } from '@noble/hashes/hmac.js'
 import { unpack, pack } from 'msgpackr'
 
+// This is all demo-data, pulled from real traffic between 2 clients (4f55a90b & 4ffdfafc) and their storage-files (nomad & reticulum)
+
 /*
 	// this came from real traffic between 2 clients (4f55a90b & 4ffdfafc)
 	- 4f55a90b ANNOUNCEs itself
@@ -54,16 +56,11 @@ const ratchets = {
   }
 }
 
-function decrypt(fromAddress, toAddress, packet) {
-    // reticulum sing/encrypt private-keys
-    const { sign, encrypt }  = identities[toAddress]
-
-    // ratchet pubkey for fromAddress
-    const { ratchet } = ratchets[toAddress][fromAddress]
+function decryptDataPacket(signPrivate, encryptPrivate, ratchetPublic, packet) {
+  // TODO: implement this
 }
 
-
-
-// example usage 4f55a90b sends DATA (message) to 4ffdfafc
-// since it's a whole packet, I should be able to get destination from packet
-console.log(decrypt('4f55a90bda8fc8b2ff6db3b9b35005f0', '4ffdfafcd44675dfa6e03393ffdedc87', packets[2]))
+// 4f55a90b sends DATA (message) to 4ffdfafc
+const { sign, encrypt } = identities['4ffdfafcd44675dfa6e03393ffdedc87']
+const ratchet = ratchets['4ffdfafcd44675dfa6e03393ffdedc87']['4f55a90bda8fc8b2ff6db3b9b35005f0'].ratchet
+console.log('Decrypted Packet:', decryptDataPacket(sign, encrypt, ratchet, packets[2]))
