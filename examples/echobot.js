@@ -2,7 +2,7 @@
 // when it receives an LXMF message it will respond
 
 import { bytesToHex } from '@noble/curves/utils.js'
-import { generateIdentity, getLxmfIdentity, pubFromPrivate, unpackReticulum, parseAnnounce, buildAnnounce, generateRatchetKeypair, PACKET_ANNOUNCE, PACKET_DATA, DESTINATION_SINGLE } from '../src/index.js'
+import { generateIdentity, getLxmfIdentity, pubFromPrivate, unpackReticulum, parseAnnounce, parseData, buildAnnounce, generateRatchetKeypair, PACKET_ANNOUNCE, PACKET_DATA, DESTINATION_SINGLE } from '../src/index.js'
 
 import WebSocket from 'ws'
 
@@ -47,9 +47,10 @@ ws.on('message', (data) => {
 
   if (p.packetType === PACKET_DATA) {
     if (p.destinationType === DESTINATION_SINGLE && bytesToHex(p.destinationHash) === destinationHex) {
-      console.log('message to me', p)
+      const d = parseData(p, { ratchetPriv })
+      console.log('message to me', d)
       // TODO: read this message
-      // TODO: respond to this message with same text
+      // TODO: respond to this message with same text (use ratchetPub from other user's ANNOUNCE)
     }
   }
 })

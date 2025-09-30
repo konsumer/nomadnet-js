@@ -23,6 +23,6 @@ packetTypeNames[PACKET_PROOF] = 'PROOF'
 ws.on('message', (data) => {
   const p = unpackReticulum(data)
   let destinationAddress = bytesToHex(p.destinationHash)
-  console.log(`${packetTypeNames[p.packetType]} packet dst:${destinationAddress}: `, bytesToHex(data))
-  console.log(p)
+  console.log(`${packetTypeNames[p.packetType]} (${destinationAddress}): `, bytesToHex(data))
+  // console.log(p)
 })

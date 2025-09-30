@@ -1,6 +1,10 @@
 import { ed25519, x25519 } from '@noble/curves/ed25519.js'
-import { hexToBytes, bytesToHex, concatBytes } from '@noble/curves/utils.js'
 import { sha256 } from '@noble/hashes/sha2.js'
+import { hkdf } from '@noble/hashes/hkdf.js'
+import { cbc } from '@noble/ciphers/aes.js'
+import { hmac } from '@noble/hashes/hmac.js'
+
+import { hexToBytes, bytesToHex, concatBytes } from '@noble/curves/utils.js'
 import { unpack, pack } from 'msgpackr'
 
 // Packet-types
@@ -230,7 +234,7 @@ export function buildAnnounce({
 
   // Build the full packet via the generic builder
   const packet = buildReticulum({
-    packetType: 1, // ANNOUNCE
+    packetType: PACKET_ANNOUNCE,
     headerType,
     transportId,
     transportType,
@@ -250,5 +254,64 @@ export function buildAnnounce({
     encPub, // 32B
     sigPub, // 32B
     signature // 64B
+  }
+}
+
+// Get shared secret: Uint8Array(32)
+function deriveSharedSecret({ myPrivate, peerPublic }) {
+  return x25519.getSharedSecret(myPrivate, peerPublic)
+}
+
+// Returns {aesKey, hmacKey}
+function deriveKeys(sharedSecret, info = encoder.encode('Reticulum packet')) {
+  // Outputs 64 bytes: first 32 for AES, second 32 for HMAC
+  const hk = hkdf(sha256, sharedSecret, undefined, info, 64)
+  return {
+    aesKey: hk.slice(0, 32),
+    hmacKey: hk.slice(32, 64)
+  }
+}
+
+// Encrypt
+function encryptPacket({ aesKey, hmacKey, plaintext }) {
+  const iv = crypto.getRandomValues(new Uint8Array(16))
+  const cipher = cbc(aesKey, iv)
+  const ciphertext = cipher.encrypt(plaintext)
+  const tag = hmac(sha256, hmacKey, ciphertext)
+  return { iv, ciphertext, tag }
+}
+
+// Decrypt
+function decryptPacket({ aesKey, hmacKey, iv, ciphertext, tag }) {
+  // Authenticate
+  const expectedTag = hmac(sha256, hmacKey, ciphertext)
+  if (!expectedTag.every((v, i) => v === tag[i])) throw new Error('HMAC failed')
+  // Decrypt
+  const cipher = cbc(aesKey, iv)
+  return cipher.decrypt(ciphertext)
+}
+
+export function parseData(packet, { ratchetPriv }) {
+  const { data } = packet
+
+  // Parse fields
+  const senderRatchetPub = data.slice(0, 32)
+  const iv = data.slice(32, 48)
+  const tag = data.slice(data.length - 32)
+  const ciphertext = data.slice(48, data.length - 32)
+
+  // Use *senderRatchetPub* for ratchet, not previously saved pub!
+  const shared = deriveSharedSecret({
+    myPrivate: ratchetPriv,
+    peerPublic: senderRatchetPub
+  })
+  const { aesKey, hmacKey } = deriveKeys(shared)
+
+  const decrypted = decryptPacket({ aesKey, hmacKey, iv, ciphertext, tag })
+
+  return {
+    ...packet,
+    peerRatchetPub: senderRatchetPub,
+    decrypted
   }
 }
