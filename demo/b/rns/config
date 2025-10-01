@@ -22,9 +22,6 @@ instance_name = demoB
 loglevel = 7
 
 [interfaces]
-[[Default Interface]]
-type = AutoInterface
-interface_enabled = False
 
 [[Konsumer Websocket]]
 type = WebsocketClientInterface
