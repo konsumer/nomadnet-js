@@ -192,43 +192,19 @@ export async function decryptMessage(packet, identityPublicKey, ratchets) {
 }
 
 async function fernetDecrypt(key, token) {
-  // Fernet token structure:
-  // 1 byte version | 8 bytes timestamp | 16 bytes IV | variable ciphertext | 32 bytes HMAC
-
-  if (token.length < 57) {
-    return null // Minimum valid token size
-  }
-
-  const version = token[0]
-  if (version !== 0x80) {
-    return null
-  }
-
-  // Extract components
-  const timestamp = token.slice(1, 9)
-  const iv = token.slice(9, 25) // 16 bytes for AES-128-CBC
-  const ciphertext = token.slice(25, token.length - 32)
-  const hmacSignature = token.slice(token.length - 32)
-
-  // Verify HMAC-SHA256
-  const signingKey = key.slice(16, 32) // Second half of key
-  const encryptionKey = key.slice(0, 16) // First half of key
-
+  // Require minimum size: 16 IV + 32 HMAC
+  if (token.length < 48) return null
+  const iv = token.slice(0, 16)
+  const hmacSig = token.slice(token.length - 32)
+  const ciphertext = token.slice(16, token.length - 32)
+  const encKey = key.slice(0, 32)
+  const macKey = key.slice(32, 64)
   const dataToVerify = token.slice(0, token.length - 32)
-  const computedHmac = hmac(sha256, signingKey, dataToVerify)
 
-  if (!constantTimeCompare(hmacSignature, computedHmac)) {
-    return null
-  }
-
-  // Decrypt AES-128-CBC using Web Crypto API
-  const plaintext = await aes128CbcDecrypt(encryptionKey, iv, ciphertext)
-
-  if (!plaintext) {
-    return null
-  }
-
-  // Remove PKCS7 padding
+  const computedHmac = hmac(sha256, macKey, dataToVerify)
+  if (!constantTimeCompare(hmacSig, computedHmac)) return null
+  const plaintext = await aes256CbcDecrypt(encKey, iv, ciphertext)
+  if (!plaintext) return null
   return removePkcs7Padding(plaintext)
 }
 
