@@ -11,6 +11,9 @@ const identities = {
   [clientB.destinationHash]: clientB
 }
 
+console.log(`Client A LXMF Address: ${bytesToHex(clientA.destinationHash)}`)
+console.log(`Client B LXMF Address: ${bytesToHex(clientB.destinationHash)}`)
+
 for (const p of packets) {
   const packet = loadPacket(p)
   if (packet.packetType === PACKET_ANNOUNCE) {
@@ -20,7 +23,7 @@ for (const p of packets) {
 
   if (packet.packetType === PACKET_DATA) {
     const identity = identities[packet.destinationHash]
-    const message = await decryptMessage(packet, identity.encPub, ratchets)
+    const message = await decryptMessage(packet, identity, ratchets)
     console.log(`DATA (${bytesToHex(packet.destinationHash)})`)
     console.log(message)
   }

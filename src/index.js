@@ -152,14 +152,9 @@ export function parseAnnounce(packet) {
   return out
 }
 
-export async function decryptMessage(packet, identityPublicKey, ratchets) {
-  const DERIVED_KEY_LENGTH = 32
-
-  // Extract ciphertext from packet data
-  // First 32 bytes of packet.data is the ephemeral public key
-  if (packet.data.length < 33) {
-    return null // Not enough data
-  }
+// this is still not working
+export async function decryptMessage(packet, identity, ratchets) {
+  const DERIVED_KEY_LENGTH = 64
 
   const peerPublicKey = packet.data.slice(0, 32) // Ephemeral public key from sender
   const ciphertext = packet.data.slice(32) // Encrypted payload
@@ -167,41 +162,32 @@ export async function decryptMessage(packet, identityPublicKey, ratchets) {
   // Try each ratchet key
   for (const ratchet of ratchets) {
     try {
-      // Perform X25519 key exchange: ratchet_prv.exchange(peer_pub)
       const sharedKey = x25519.getSharedSecret(ratchet, peerPublicKey)
-
-      // Derive key using HKDF with SHA-256
-      const salt = sha256(identityPublicKey)
-      const context = new Uint8Array(0)
-
-      const derivedKey = hkdf(sha256, sharedKey, salt, context, DERIVED_KEY_LENGTH)
-
-      // Decrypt using Fernet-style token
+      const derivedKey = hkdf(sha256, sharedKey, sha256(identity.encPub), new Uint8Array(0), DERIVED_KEY_LENGTH)
       const plaintext = await fernetDecrypt(derivedKey, ciphertext)
-
       if (plaintext !== null) {
         return plaintext
       }
     } catch (e) {
       // Try next ratchet on failure
+      console.log(e)
       continue
     }
   }
-
   return null
 }
 
 async function fernetDecrypt(key, token) {
   // Require minimum size: 16 IV + 32 HMAC
-  if (token.length < 48) return null
+  if (token.length < 64) return null
   const iv = token.slice(0, 16)
   const hmacSig = token.slice(token.length - 32)
   const ciphertext = token.slice(16, token.length - 32)
   const encKey = key.slice(0, 32)
   const macKey = key.slice(32, 64)
   const dataToVerify = token.slice(0, token.length - 32)
-
   const computedHmac = hmac(sha256, macKey, dataToVerify)
+  // console.log(bytesToHex(hmacSig.slice(0, 8)), bytesToHex(computedHmac.slice(0, 8)))
   if (!constantTimeCompare(hmacSig, computedHmac)) return null
   const plaintext = await aes256CbcDecrypt(encKey, iv, ciphertext)
   if (!plaintext) return null
