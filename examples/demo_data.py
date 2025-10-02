@@ -20,53 +20,22 @@ PROOF (d7c0e833f0cbde9f9133cd9e7d508b1a):  0300d7c0e833f0cbde9f9133cd9e7d508b1a0
 """
 
 packets = []
-
 for line in _traffic.strip().split('\n'):
 	info, data = line.split(':  ')
 	packets.append(bytes.fromhex(data))
 
-# TODO: can I get these from ANNOUNCE packets?
-ratchets=[]
-# ratchets.append(bytes.fromhex('0df6d220011ce9da7559fbd620380501d9e19afce87a6d0c661412f3831cc915'))
-# ratchets.append(bytes.fromhex('e2bb21108b2cbc900b476290ab7867441446db366a70fb8ed1448ca0e889bd65'))
-ratchets.append(bytes.fromhex('205cb256c44d4d3939bdc02e2a9667de4214cbcc651bbdc0a318acf7ec68b066'))
-ratchets.append(bytes.fromhex('28dd4da561a9bc0cb7d644a4487c01cbe32b01718a21f18905f5611b110a5c45'))
-
-
+# These are stored ratchets (private-keys for decryption)
+ratchets=[
+  bytes.fromhex('205cb256c44d4d3939bdc02e2a9667de4214cbcc651bbdc0a318acf7ec68b066'),
+  bytes.fromhex('28dd4da561a9bc0cb7d644a4487c01cbe32b01718a21f18905f5611b110a5c45')
+]
 
 """
-ratchet info:
-
 from glob import glob
 from RNS.vendor.umsgpack import unpack, unpackb
 
-for f in glob('demo/?/rns/storage/ratchets/*'):
+for f in glob('demo/?/nomad/storage/lxmf/ratchets/*.ratchets'):
   p = unpack(open(f, 'rb'))
-  print(f)
-  print('  ratchet:', p['ratchet'].hex())
-
-for f in glob('demo/?/nomad/storage/lxmf/ratchets/*'):
-  p = unpack(open(f, 'rb'))
-  print(f)
-  print('  signature:', p['signature'].hex())
-  print('  ratchets:')
   for r in unpackb(p['ratchets']):
-    print(f'    {r.hex()}')
-
-demo/a/rns/storage/ratchets/76a93cda889a8c0a88451e02d53fd8b9
-  ratchet: 0df6d220011ce9da7559fbd620380501d9e19afce87a6d0c661412f3831cc915
-demo/a/rns/storage/ratchets/072ec44973a8dee8e28d230fb4af8fe4
-  ratchet: e2bb21108b2cbc900b476290ab7867441446db366a70fb8ed1448ca0e889bd65
-demo/b/rns/storage/ratchets/76a93cda889a8c0a88451e02d53fd8b9
-  ratchet: 0df6d220011ce9da7559fbd620380501d9e19afce87a6d0c661412f3831cc915
-demo/b/rns/storage/ratchets/072ec44973a8dee8e28d230fb4af8fe4
-  ratchet: e2bb21108b2cbc900b476290ab7867441446db366a70fb8ed1448ca0e889bd65
-demo/a/nomad/storage/lxmf/ratchets/072ec44973a8dee8e28d230fb4af8fe4.ratchets
-  signature: 856ae19b5846cd11ee232dd0f3cc6446c92c29f8fe3f9321f785b613cb1ce27c2e64832277550a66bf7b2a40646d61e4721138d56ec2f3600a0cf2211eb60a0e
-  ratchets:
-    205cb256c44d4d3939bdc02e2a9667de4214cbcc651bbdc0a318acf7ec68b066
-demo/b/nomad/storage/lxmf/ratchets/76a93cda889a8c0a88451e02d53fd8b9.ratchets
-  signature: e72de55b967304af309cc09b0f066f78d2102abf285acb5a42acc9b24df3e0aa17db4a4cf586a5c206392e2c0cfd9bef037544224419e173330dbe27e4526b0a
-  ratchets:
-    28dd4da561a9bc0cb7d644a4487c01cbe32b01718a21f18905f5611b110a5c45
+    print(r.hex())
 """
