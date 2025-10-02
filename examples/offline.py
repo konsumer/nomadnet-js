@@ -1,3 +1,5 @@
+# this demo will parse offline packets from existing clients
+
 import demo_data
 import RNS
 import textwrap
@@ -11,11 +13,6 @@ def load_packet(raw):
   packet.snr = None
   packet.receiving_interface = None
   return packet
-
-# parse an announce packet and add to RNS.Identity.known_ratchets
-def process_announce(packet):
-    # TODO: generate a ratchet for this destination
-    pass
 
 # parse & decrypt DATA packet with recipient identity (private & public key) & ratchets
 def process_data(packet, identity):
@@ -41,7 +38,6 @@ for p in demo_data.packets:
     if packet.packet_type == RNS.Packet.ANNOUNCE:
         print(f"ANNOUNCE ({packet.destination_hash.hex()})")
         if RNS.Identity.validate_announce(packet, True):
-            process_announce(packet)
             print("  Valid")
         else:
             print("  Invalid")
