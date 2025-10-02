@@ -3,9 +3,11 @@ import { sha256 } from '@noble/hashes/sha2.js'
 import { hkdf } from '@noble/hashes/hkdf.js'
 import { cbc } from '@noble/ciphers/aes.js'
 import { hmac } from '@noble/hashes/hmac.js'
-
 import { hexToBytes, bytesToHex, concatBytes } from '@noble/curves/utils.js'
 import { unpack, pack } from 'msgpackr'
+
+const encoder = new TextEncoder()
+const decoder = new TextDecoder()
 
 // Packet-types
 export const PACKET_DATA = 0
@@ -42,9 +44,6 @@ export const CONTEXT_LINKPROOF = 0xfd // Packet is a link packet proof
 export const CONTEXT_LRRTT = 0xfe // Packet is a link request round-trip time measurement
 export const CONTEXT_LRPROOF = 0xff // Packet is a link request proof
 
-const encoder = new TextEncoder()
-const decoder = new TextDecoder()
-
 // Serialization (storing string)
 export const serializeIdentity = ({ encPriv, sigPriv }) => bytesToHex(new Uint8Array([...encPriv, ...sigPriv]))
 export const unserializeIdentity = (s) => {
@@ -77,8 +76,7 @@ export function pubFromPrivate({ encPriv, sigPriv }) {
   return { encPub, sigPub }
 }
 
-// Unpack a reticulum packet header from bytes
-export function unpackReticulum(buffer) {
+export function loadPacket(buffer) {
   const out = {
     flags: buffer[0],
     hops: buffer[1],
@@ -151,167 +149,120 @@ export function parseAnnounce(packet) {
   return out
 }
 
-// Generic Reticulum packet builder (header + payload)
-export function buildReticulum({
-  packetType, // 0..3
-  headerType = 0, // 0: [flags,hops,dst,ctx], 1: [flags,hops,transportId,dst,ctx]
-  transportId, // Uint8Array(16) if headerType=1
-  transportType = 0, // 0..1
-  destinationType = 0, // 0..3
-  hops = 0x00, // 0..255
-  destinationHash, // Uint8Array(16)
-  context = 0x00, // 0..255
-  contextFlag = 0, // 0..1 (ratchet indicator or similar)
-  payload // Uint8Array
-}) {
-  const flags = ((headerType & 0b1) << 6) | ((contextFlag & 0b1) << 5) | ((transportType & 0b1) << 4) | ((destinationType & 0b11) << 2) | (packetType & 0b11)
+export async function decryptMessage(packet, identityPublicKey, ratchets) {
+  const DERIVED_KEY_LENGTH = 32
 
-  const headFixed = Uint8Array.of(flags, hops)
-  const headTail = Uint8Array.of(context)
-  const header = headerType === 1 ? concatBytes(headFixed, transportId, destinationHash, headTail) : concatBytes(headFixed, destinationHash, headTail)
-
-  return concatBytes(header, payload)
-}
-
-// Create a new ratchet private key (32 bytes) and derive its public key (32 bytes)
-export function generateRatchetKeypair() {
-  const ratchetPriv = new Uint8Array(32)
-  crypto.getRandomValues(ratchetPriv) // 32 random bytes
-  const ratchetPub = x25519.getPublicKey(ratchetPriv) // 32-byte X25519 public key
-  return { ratchetPriv, ratchetPub }
-}
-
-// Build ANNOUNCE packet directly from a 64-byte identity hex
-export function buildAnnounce({
-  encPriv,
-  sigPriv,
-  appName, // e.g. "myapp"
-  aspects = [], // e.g. ["inbox"]
-  data = undefined, // Object or undefined
-  ratchet = null, // Uint8Array(32) or null
-  headerType = 0,
-  transportId = undefined,
-  transportType = 0,
-  destinationType = 0,
-  hops = 0x00,
-  context = 0x00,
-  peerName = undefined // string that names peer ("Annonymous Peer")
-} = {}) {
-  const encPub = x25519.getPublicKey(encPriv) // 32B
-  const sigPub = ed25519.getPublicKey(sigPriv) // 32B
-
-  let appData = undefined
-  if (data || peerName) {
-    appData = pack([encoder.encode(peerName || 'Annonymous Peer'), data])
+  // Extract ciphertext from packet data
+  // First 32 bytes of packet.data is the ephemeral public key
+  if (packet.data.length < 33) {
+    return null // Not enough data
   }
 
-  // nameHash: 10B = trunc(SHA256("app.aspect1.aspect2"))
-  if (!appName || appName.includes('.')) throw new Error('Invalid appName')
-  for (const a of aspects) if (!a || a.includes('.')) throw new Error('Invalid aspect')
-  const fullName = aspects.length ? `${appName}.${aspects.join('.')}` : appName
-  const nameHash = sha256(encoder.encode(fullName)).slice(0, 10)
+  const peerPublicKey = packet.data.slice(0, 32) // Ephemeral public key from sender
+  const ciphertext = packet.data.slice(32) // Encrypted payload
 
-  // identityHash: 16B = trunc(SHA256(encPub||sigPub))
-  const identityHash = sha256(concatBytes(encPub, sigPub)).slice(0, 16)
+  // Try each ratchet key
+  for (const ratchet of ratchets) {
+    try {
+      // Perform X25519 key exchange: ratchet_prv.exchange(peer_pub)
+      const sharedKey = x25519.getSharedSecret(ratchet, peerPublicKey)
 
-  // destinationHash: 16B = trunc(SHA256(nameHash||identityHash))
-  const destinationHash = sha256(concatBytes(nameHash, identityHash)).slice(0, 16)
+      // Derive key using HKDF with SHA-256
+      const salt = sha256(identityPublicKey)
+      const context = new Uint8Array(0)
 
-  // randomHash: 10B = 5 random + 5B big-endian unix time
-  const r = new Uint8Array(5)
-  if (!crypto?.getRandomValues) throw new Error('Secure RNG required')
-  crypto.getRandomValues(r)
-  const t = Math.floor(Date.now() / 1000)
-  const ts = new Uint8Array([(t >>> 32) & 255, (t >>> 24) & 255, (t >>> 16) & 255, (t >>> 8) & 255, t & 255])
-  const randomHash = concatBytes(r, ts)
+      const derivedKey = hkdf(sha256, sharedKey, salt, context, DERIVED_KEY_LENGTH)
 
-  // Sign over: dstHash || encPub || sigPub || nameHash || randomHash || [ratchet?] || [appData?]
-  const toSign = concatBytes(destinationHash, encPub, sigPub, nameHash, randomHash, ratchet ?? new Uint8Array(0), appData ?? new Uint8Array(0))
-  const signature = ed25519.sign(toSign, sigPriv) // 64B
+      // Decrypt using Fernet-style token
+      const plaintext = await fernetDecrypt(derivedKey, ciphertext)
 
-  // Payload: encPub || sigPub || nameHash || randomHash || [ratchet?] || signature || [appData?]
-  const payload = concatBytes(encPub, sigPub, nameHash, randomHash, ratchet ?? new Uint8Array(0), signature, appData ?? new Uint8Array(0))
-
-  // Build the full packet via the generic builder
-  const packet = buildReticulum({
-    packetType: PACKET_ANNOUNCE,
-    headerType,
-    transportId,
-    transportType,
-    destinationType,
-    hops,
-    destinationHash,
-    context,
-    contextFlag: ratchet ? 1 : 0,
-    payload
-  })
-
-  return {
-    packet, // Uint8Array
-    destinationHash, // 16B
-    nameHash, // 10B
-    randomHash, // 10B
-    encPub, // 32B
-    sigPub, // 32B
-    signature // 64B
+      if (plaintext !== null) {
+        return plaintext
+      }
+    } catch (e) {
+      // Try next ratchet on failure
+      continue
+    }
   }
+
+  return null
 }
 
-// Get shared secret: Uint8Array(32)
-function deriveSharedSecret({ myPrivate, peerPublic }) {
-  return x25519.getSharedSecret(myPrivate, peerPublic)
+async function fernetDecrypt(key, token) {
+  // Fernet token structure:
+  // 1 byte version | 8 bytes timestamp | 16 bytes IV | variable ciphertext | 32 bytes HMAC
+
+  if (token.length < 57) {
+    return null // Minimum valid token size
+  }
+
+  const version = token[0]
+  if (version !== 0x80) {
+    return null
+  }
+
+  // Extract components
+  const timestamp = token.slice(1, 9)
+  const iv = token.slice(9, 25) // 16 bytes for AES-128-CBC
+  const ciphertext = token.slice(25, token.length - 32)
+  const hmacSignature = token.slice(token.length - 32)
+
+  // Verify HMAC-SHA256
+  const signingKey = key.slice(16, 32) // Second half of key
+  const encryptionKey = key.slice(0, 16) // First half of key
+
+  const dataToVerify = token.slice(0, token.length - 32)
+  const computedHmac = hmac(sha256, signingKey, dataToVerify)
+
+  if (!constantTimeCompare(hmacSignature, computedHmac)) {
+    return null
+  }
+
+  // Decrypt AES-128-CBC using Web Crypto API
+  const plaintext = await aes128CbcDecrypt(encryptionKey, iv, ciphertext)
+
+  if (!plaintext) {
+    return null
+  }
+
+  // Remove PKCS7 padding
+  return removePkcs7Padding(plaintext)
 }
 
-// Returns {aesKey, hmacKey}
-function deriveKeys(sharedSecret, info = encoder.encode('Reticulum packet')) {
-  // Outputs 64 bytes: first 32 for AES, second 32 for HMAC
-  const hk = hkdf(sha256, sharedSecret, undefined, info, 64)
-  return {
-    aesKey: hk.slice(0, 32),
-    hmacKey: hk.slice(32, 64)
+function constantTimeCompare(a, b) {
+  if (a.length !== b.length) return false
+  let result = 0
+  for (let i = 0; i < a.length; i++) {
+    result |= a[i] ^ b[i]
+  }
+  return result === 0
+}
+
+async function aes128CbcDecrypt(key, iv, ciphertext) {
+  try {
+    // Import key for Web Crypto API
+    const cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'AES-CBC' }, false, ['decrypt'])
+
+    // Decrypt
+    const decrypted = await crypto.subtle.decrypt(
+      {
+        name: 'AES-CBC',
+        iv: iv
+      },
+      cryptoKey,
+      ciphertext
+    )
+
+    return new Uint8Array(decrypted)
+  } catch (e) {
+    return null
   }
 }
 
-// Encrypt
-function encryptPacket({ aesKey, hmacKey, plaintext }) {
-  const iv = crypto.getRandomValues(new Uint8Array(16))
-  const cipher = cbc(aesKey, iv)
-  const ciphertext = cipher.encrypt(plaintext)
-  const tag = hmac(sha256, hmacKey, ciphertext)
-  return { iv, ciphertext, tag }
-}
-
-// Decrypt
-function decryptPacket({ aesKey, hmacKey, iv, ciphertext, tag }) {
-  // Authenticate
-  const expectedTag = hmac(sha256, hmacKey, ciphertext)
-  if (!expectedTag.every((v, i) => v === tag[i])) throw new Error('HMAC failed')
-  // Decrypt
-  const cipher = cbc(aesKey, iv)
-  return cipher.decrypt(ciphertext)
-}
-
-export function parseData(packet, { ratchetPriv }) {
-  const { data } = packet
-
-  // Parse fields
-  const senderRatchetPub = data.slice(0, 32)
-  const iv = data.slice(32, 48)
-  const tag = data.slice(data.length - 32)
-  const ciphertext = data.slice(48, data.length - 32)
-
-  // Use *senderRatchetPub* for ratchet, not previously saved pub!
-  const shared = deriveSharedSecret({
-    myPrivate: ratchetPriv,
-    peerPublic: senderRatchetPub
-  })
-  const { aesKey, hmacKey } = deriveKeys(shared)
-
-  const decrypted = decryptPacket({ aesKey, hmacKey, iv, ciphertext, tag })
-
-  return {
-    ...packet,
-    peerRatchetPub: senderRatchetPub,
-    decrypted
+function removePkcs7Padding(data) {
+  const paddingLength = data[data.length - 1]
+  if (paddingLength > 16 || paddingLength > data.length) {
+    throw new Error('Invalid padding')
   }
+  return data.slice(0, data.length - paddingLength)
 }
