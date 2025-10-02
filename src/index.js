@@ -48,10 +48,13 @@ export const CONTEXT_LRPROOF = 0xff // Packet is a link request proof
 export const serializeIdentity = ({ encPriv, sigPriv }) => bytesToHex(new Uint8Array([...encPriv, ...sigPriv]))
 export const unserializeIdentity = (s) => {
   const keyBytes = hexToBytes(s)
-  return {
+  let id = {
     encPriv: keyBytes.slice(0, 32),
     sigPriv: keyBytes.slice(32)
   }
+  id = { ...id, ...pubFromPrivate(id) }
+  id = { ...id, ...getLxmfIdentity(id) }
+  return id
 }
 
 // Generate identity keys
@@ -229,13 +232,25 @@ async function fernetDecrypt(key, token) {
   return removePkcs7Padding(plaintext)
 }
 
-function constantTimeCompare(a, b) {
+// compare if 2 arrays have equal value, using contant-time (prevents sideband attacks)
+export function constantTimeCompare(a, b) {
   if (a.length !== b.length) return false
   let result = 0
   for (let i = 0; i < a.length; i++) {
     result |= a[i] ^ b[i]
   }
   return result === 0
+}
+
+// compare if 2 arrays have equal value
+export function byteCompare(a, b) {
+  if (a.length !== b.length) return false
+  for (const i in a) {
+    if (a[i] !== b[i]) {
+      return false
+    }
+  }
+  return true
 }
 
 async function aes128CbcDecrypt(key, iv, ciphertext) {
