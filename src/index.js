@@ -44,8 +44,10 @@ export const CONTEXT_LINKPROOF = 0xfd // Packet is a link packet proof
 export const CONTEXT_LRRTT = 0xfe // Packet is a link request round-trip time measurement
 export const CONTEXT_LRPROOF = 0xff // Packet is a link request proof
 
-// Serialization (storing string)
+// Serialize identity as just 2 privatge keys, encopded as hex-string
 export const serializeIdentity = ({ encPriv, sigPriv }) => bytesToHex(new Uint8Array([...encPriv, ...sigPriv]))
+
+// Deserialize identity private keys (hex string of 2 keys) and derive public & address-info 
 export const unserializeIdentity = (s) => {
   const keyBytes = hexToBytes(s)
   let id = {
@@ -57,11 +59,14 @@ export const unserializeIdentity = (s) => {
   return id
 }
 
-// Generate identity keys
+// Generate fresh & complete identity
 export function generateIdentity() {
   const encPriv = x25519.utils.randomSecretKey()
-  const sigPriv = ed25519.utils.randomSecretKey()
-  return { encPriv, sigPriv }
+  let sigPriv = ed25519.utils.randomSecretKey()
+  let id = { encPriv, sigPriv }
+  id = { ...id, ...pubFromPrivate(id) }
+  id = { ...id, ...getLxmfIdentity(id) }
+  return id
 }
 
 // Get LXMF address info from pub keys
@@ -73,12 +78,35 @@ export function getLxmfIdentity({ encPub, sigPub, name = 'lxmf.delivery' }) {
   return { identityHash, destinationHash }
 }
 
+// get public-keys from private-keys
 export function pubFromPrivate({ encPriv, sigPriv }) {
   const encPub = x25519.getPublicKey(encPriv) // 32 bytes
   const sigPub = ed25519.getPublicKey(sigPriv) // 32 bytes
   return { encPub, sigPub }
 }
 
+// compare if 2 arrays have equal value, using contant-time (prevents sideband attacks)
+export function constantTimeCompare(a, b) {
+  if (a.length !== b.length) return false
+  let result = 0
+  for (let i = 0; i < a.length; i++) {
+    result |= a[i] ^ b[i]
+  }
+  return result === 0
+}
+
+// compare if 2 arrays have equal value
+export function byteCompare(a, b) {
+  if (a.length !== b.length) return false
+  for (const i in a) {
+    if (a[i] !== b[i]) {
+      return false
+    }
+  }
+  return true
+}
+
+// Parse a reticulum packet into it's parts 
 export function loadPacket(buffer) {
   const out = {
     flags: buffer[0],
@@ -106,7 +134,7 @@ export function loadPacket(buffer) {
   return out
 }
 
-// Verify and parse an announce packet (output from unpackHeader)
+// Verify and parse an announce packet (output from loadPacket)
 export function parseAnnounce(packet) {
   const out = { ...packet }
 
@@ -153,93 +181,6 @@ export function parseAnnounce(packet) {
 }
 
 // this is still not working
-export async function decryptMessage(packet, identity, ratchets) {
-  const DERIVED_KEY_LENGTH = 64
-
-  const peerPublicKey = packet.data.slice(0, 32) // Ephemeral public key from sender
-  const ciphertext = packet.data.slice(32) // Encrypted payload
-
-  // Try each ratchet key
-  for (const ratchet of ratchets) {
-    try {
-      const sharedKey = x25519.getSharedSecret(ratchet, peerPublicKey)
-      const derivedKey = hkdf(sha256, sharedKey, sha256(identity.encPub), new Uint8Array(0), DERIVED_KEY_LENGTH)
-      const plaintext = await fernetDecrypt(derivedKey, ciphertext)
-      if (plaintext !== null) {
-        return plaintext
-      }
-    } catch (e) {
-      // Try next ratchet on failure
-      console.log(e)
-      continue
-    }
-  }
+export async function decryptMessage(packet, identity, ratchets=[]) {
   return null
-}
-
-async function fernetDecrypt(key, token) {
-  // Require minimum size: 16 IV + 32 HMAC
-  if (token.length < 64) return null
-  const iv = token.slice(0, 16)
-  const hmacSig = token.slice(token.length - 32)
-  const ciphertext = token.slice(16, token.length - 32)
-  const encKey = key.slice(0, 32)
-  const macKey = key.slice(32, 64)
-  const dataToVerify = token.slice(0, token.length - 32)
-  const computedHmac = hmac(sha256, macKey, dataToVerify)
-  // console.log(bytesToHex(hmacSig.slice(0, 8)), bytesToHex(computedHmac.slice(0, 8)))
-  if (!constantTimeCompare(hmacSig, computedHmac)) return null
-  const plaintext = await aes256CbcDecrypt(encKey, iv, ciphertext)
-  if (!plaintext) return null
-  return removePkcs7Padding(plaintext)
-}
-
-// compare if 2 arrays have equal value, using contant-time (prevents sideband attacks)
-export function constantTimeCompare(a, b) {
-  if (a.length !== b.length) return false
-  let result = 0
-  for (let i = 0; i < a.length; i++) {
-    result |= a[i] ^ b[i]
-  }
-  return result === 0
-}
-
-// compare if 2 arrays have equal value
-export function byteCompare(a, b) {
-  if (a.length !== b.length) return false
-  for (const i in a) {
-    if (a[i] !== b[i]) {
-      return false
-    }
-  }
-  return true
-}
-
-async function aes128CbcDecrypt(key, iv, ciphertext) {
-  try {
-    // Import key for Web Crypto API
-    const cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'AES-CBC' }, false, ['decrypt'])
-
-    // Decrypt
-    const decrypted = await crypto.subtle.decrypt(
-      {
-        name: 'AES-CBC',
-        iv: iv
-      },
-      cryptoKey,
-      ciphertext
-    )
-
-    return new Uint8Array(decrypted)
-  } catch (e) {
-    return null
-  }
-}
-
-function removePkcs7Padding(data) {
-  const paddingLength = data[data.length - 1]
-  if (paddingLength > 16 || paddingLength > data.length) {
-    throw new Error('Invalid padding')
-  }
-  return data.slice(0, data.length - paddingLength)
 }
