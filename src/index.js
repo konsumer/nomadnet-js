@@ -438,35 +438,31 @@ export function encryptData(plaintext, recipientPubKey, recipientIdentityHash) {
  * @param {Uint8Array} recipientIdentityHash - Recipient's identity hash (16 bytes)
  * @returns {Object} Complete packet ready for buildPacket()
  */
-export function buildData(message, recipientDestinationHash, recipientRatchetPub, recipientIdentityHash) {
+export function buildData(message, recipientDestinationHash, recipientRatchetPriv, recipientIdentityHash) {
   const timestamp = Date.now() / 1000
-  const title = new Uint8Array(message.title ? new TextEncoder().encode(message.title) : [])
-  const content = new TextEncoder().encode(message.content || '')
-  const fields = message.fields || {}
+  const titleBytes = message.title ? encoder.encode(message.title) : new Uint8Array()
+  const contentBytes = message.content ? encoder.encode(message.content) : new Uint8Array()
+  const messageData = pack([timestamp, titleBytes, contentBytes, message.fields || {}])
 
-  // Pack message data as msgpack array
-  const messageData = pack([timestamp, title, content, fields])
-
-  // Reticulum adds 80 bytes of header before the message data
-  // This includes routing info, packet type, etc.
-  // For now, we'll use zeros - you may need to adjust based on actual Reticulum format
+  // Add 80-byte header
+  // TODO: what is this?
   const header = new Uint8Array(80)
   const plaintext = new Uint8Array([...header, ...messageData])
 
-  // Encrypt the plaintext
+  const recipientRatchetPub = x25519.getPublicKey(recipientRatchetPriv) // Derive public key
   const encryptedData = encryptData(plaintext, recipientRatchetPub, recipientIdentityHash)
 
-  // Build DATA packet structure
-  return {
+  // Build complete DATA packet
+  return buildPacket({
     ifac: 0,
-    headerType: 0, // Single address
-    contextFlag: 0, // No special context
-    propogationType: 0, // Normal routing
-    destinationType: 0, // Single destination
-    packetType: 0, // DATA packet
+    headerType: 0,
+    contextFlag: 0,
+    propogationType: 0,
+    destinationType: 0,
+    packetType: 0,
     hops: 0,
     destinationHash: recipientDestinationHash,
     context: 0,
     data: encryptedData
-  }
+  })
 }
