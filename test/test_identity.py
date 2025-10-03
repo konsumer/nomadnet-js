@@ -1,23 +1,13 @@
 # Unit-tests for Identity-related functions (for comparison with javascript)
 
 import unittest
-import sys
-import os
-
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(current_dir, '..', 'examples'))
-
-import demo_data
+from test import demo_data
 import RNS
 
 clientA = RNS.Identity.from_bytes(demo_data.keys['clientA'])
 clientB = RNS.Identity.from_bytes(demo_data.keys['clientB'])
 clientA_addr = RNS.Destination.hash(clientA, "lxmf", "delivery")
 clientB_addr = RNS.Destination.hash(clientB, "lxmf", "delivery")
-identities = {
-    clientA_addr: clientA,
-    clientB_addr: clientB
-}
 
 class TestIdentity(unittest.TestCase):
 	# test some pre-made identites for known-values to make sure keys are correct

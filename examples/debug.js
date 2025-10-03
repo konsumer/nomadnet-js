@@ -1,5 +1,5 @@
 // This will simply output traffic logs on a websocket
-// run other clients on the same neetwork, and you can see their packets
+// run other clients on the same socket, and you can see their packets
 
 import { bytesToHex } from '@noble/curves/utils.js'
 import { loadPacket, PACKET_DATA, PACKET_ANNOUNCE, PACKET_LINKREQUEST, PACKET_PROOF } from '../src/index.js'

@@ -75,6 +75,12 @@ export function generateIdentity() {
   return id
 }
 
+export function generateRatchet() {
+  const ratchetPriv = randomBytes(32)
+  const ratchetPub = x25519.getPublicKey(ratchetPriv)
+  return { ratchetPriv, ratchetPub }
+}
+
 // Get LXMF address info from pub keys
 export function getLxmfIdentity({ encPub, sigPub, name = 'lxmf.delivery' }) {
   const nameHash = sha256(encoder.encode(name)).slice(0, 10) // 10 bytes
@@ -210,13 +216,15 @@ export function buildPacket(packet) {
   }
 
   // Concatenate all parts
-  const totalLength = parts.reduce((sum, arr) => sum + arr.length, 0)
+  const totalLength = parts.reduce((sum, arr) => sum + (arr?.length || 0), 0)
   const buffer = new Uint8Array(totalLength)
   let offset = 0
 
   for (const part of parts) {
-    buffer.set(part, offset)
-    offset += part.length
+    if (part) {
+      buffer.set(part, offset)
+      offset += part.length
+    }
   }
 
   return buffer
@@ -230,9 +238,14 @@ export function buildAnnounce(announce, identity) {
   parts.push(identity.encPub) // 32 bytes
   parts.push(identity.sigPub) // 32 bytes
 
+  const fullAppName = announce.aspects && announce.aspects.length > 0 ? `${announce.appName}.${announce.aspects.join('.')}` : announce.appName
+
+  const nameHash = sha256(new TextEncoder().encode(fullAppName)).slice(0, 10)
+  const randomHash = randomBytes(10)
+
   // Hashes
-  parts.push(announce.nameHash) // 10 bytes
-  parts.push(announce.randomHash) // 10 bytes
+  parts.push(nameHash) // 10 bytes
+  parts.push(randomHash) // 10 bytes
 
   // Ratchet public key (only if enabled)
   if (announce.contextFlag && announce.ratchetPub) {
@@ -254,7 +267,7 @@ export function buildAnnounce(announce, identity) {
   }
 
   // Create signed data (what gets signed)
-  const signedData = new Uint8Array([...announce.destinationHash, ...announce.pubKeyEncrypt, ...announce.pubKeySignature, ...announce.nameHash, ...announce.randomHash, ...(announce.useRatchet && announce.ratchetPub ? announce.ratchetPub : []), ...(announce.appData || [])])
+  const signedData = new Uint8Array([...identity.destinationHash, ...identity.encPub, ...identity.sigPub, ...nameHash, ...randomHash, ...(announce.useRatchet && announce.ratchetPub ? announce.ratchetPub : []), ...(announce.appData || [])])
 
   // Sign with Ed25519 private key
   const signature = ed25519.sign(signedData, identity.sigPriv)
@@ -267,7 +280,7 @@ export function buildAnnounce(announce, identity) {
   const { ifac = 0, headerType, contextFlag, propogationType = PROPOGATION_BROADCAST, destinationType = DESTINATION_SINGLE, packetType = PACKET_ANNOUNCE, hops = 0, destinationHash, transportId, context = 0 } = announce
 
   // Build complete packet structure
-  return buildPacket({
+  return {
     ifac,
     headerType,
     contextFlag,
@@ -279,7 +292,7 @@ export function buildAnnounce(announce, identity) {
     transportId,
     context,
     data: finalData
-  })
+  }
 }
 
 function reticulumFernetDecrypt(token, derivedKey64) {
@@ -442,7 +455,7 @@ export function buildMessage(message, recipientDestinationHash, recipientRatchet
   const encryptedData = encryptData(plaintext, recipientRatchetPub, recipientIdentityHash)
 
   // Build complete DATA packet
-  return buildPacket({
+  return {
     ifac: 0,
     headerType: 0,
     contextFlag: 0,
@@ -453,5 +466,5 @@ export function buildMessage(message, recipientDestinationHash, recipientRatchet
     destinationHash: recipientDestinationHash,
     context: 0,
     data: encryptedData
-  })
+  }
 }

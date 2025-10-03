@@ -213,7 +213,7 @@ So here, that first packet, DATA looks like this:
 
 ```
 
-With RATCHET, it's an ID (random number) you can create a shared private key, using the announce-packet's public key, your private key, that ID, and send DATA messages to it, using that.
+With RATCHET, it's a pubkey you can create a shared private key, using the announce-packet's public key, your private key, that ID, and send DATA messages to it, using that.
 
 Commonly, APP_DATA is a msgpack array, here it is:
 
