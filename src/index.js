@@ -304,7 +304,7 @@ function reticulumFernetDecrypt(token, derivedKey64) {
 
   // Try different approaches with @noble/ciphers
   // Option 1: Direct decrypt call
-  const plaintext = cbc(encryptionKey, iv).decrypt(ciphertext)
+  let plaintext = cbc(encryptionKey, iv).decrypt(ciphertext)
 
   // Manually remove PKCS7 padding
   const paddingLength = plaintext[plaintext.length - 1]
@@ -326,15 +326,9 @@ export function identityDecrypt(data, identity, ratchets = []) {
     const privateKey = ratchets[i]
 
     try {
-      // Perform ECDH
       const sharedSecret = x25519.getSharedSecret(privateKey, ephemeralPub)
-
-      // Derive 64 bytes using HKDF (salt=identity hash, info=undefined)
       const derivedKey = hkdf(sha256, sharedSecret, identity.identityHash, undefined, 64)
-
-      // Decrypt
       const plaintext = reticulumFernetDecrypt(ciphertext, derivedKey)
-
       return plaintext
     } catch (e) {
       continue
@@ -438,7 +432,7 @@ export function encryptData(plaintext, recipientPubKey, recipientIdentityHash) {
  * @param {Uint8Array} recipientIdentityHash - Recipient's identity hash (16 bytes)
  * @returns {Object} Complete packet ready for buildPacket()
  */
-export function buildData(message, recipientDestinationHash, recipientRatchetPriv, recipientIdentityHash) {
+export function buildMessage(message, recipientDestinationHash, recipientRatchetPriv, recipientIdentityHash) {
   const timestamp = Date.now() / 1000
   const titleBytes = message.title ? encoder.encode(message.title) : new Uint8Array()
   const contentBytes = message.content ? encoder.encode(message.content) : new Uint8Array()
