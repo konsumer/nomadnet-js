@@ -358,3 +358,115 @@ export function processData(packet, identity, ratchets = []) {
 
   return { timestamp, title, content, fields }
 }
+
+/**
+ * Reticulum's modified Fernet encrypt using @noble
+ */
+function reticulumFernetEncrypt(plaintext, derivedKey64) {
+  // Add PKCS7 padding
+  const blockSize = 16
+  const paddingLength = blockSize - (plaintext.length % blockSize)
+  const padding = new Uint8Array(paddingLength).fill(paddingLength)
+  const paddedPlaintext = new Uint8Array([...plaintext, ...padding])
+
+  // Generate random IV
+  const iv = randomBytes(16)
+
+  // Split the 64-byte derived key
+  const signingKey = derivedKey64.slice(0, 32)
+  const encryptionKey = derivedKey64.slice(32, 64)
+
+  // Encrypt with AES-256-CBC
+  const cipher = cbc(encryptionKey, iv)
+  const ciphertext = cipher.encrypt(paddedPlaintext)
+
+  // Build token: IV + Ciphertext
+  const token = new Uint8Array(iv.length + ciphertext.length)
+  token.set(iv, 0)
+  token.set(ciphertext, iv.length)
+
+  // Calculate HMAC over IV + Ciphertext
+  const tokenHmac = hmac(sha256, signingKey, token)
+
+  // Final token: IV + Ciphertext + HMAC
+  const finalToken = new Uint8Array(token.length + tokenHmac.length)
+  finalToken.set(token, 0)
+  finalToken.set(tokenHmac, token.length)
+
+  return finalToken
+}
+
+/**
+ * Encrypt data for a Reticulum DATA packet
+ *
+ * @param {Uint8Array} plaintext - The data to encrypt
+ * @param {Uint8Array} recipientPubKey - Recipient's ratchet public key or identity encryption key (32 bytes)
+ * @param {Uint8Array} recipientIdentityHash - Recipient's identity hash (16 bytes)
+ * @returns {Uint8Array} Encrypted packet data (ephemeral_pub + fernet_token)
+ */
+export function encryptData(plaintext, recipientPubKey, recipientIdentityHash) {
+  // Generate ephemeral X25519 key pair
+  const ephemeralPriv = randomBytes(32)
+  const ephemeralPub = x25519.getPublicKey(ephemeralPriv)
+
+  // Perform ECDH with recipient's public key
+  const sharedSecret = x25519.getSharedSecret(ephemeralPriv, recipientPubKey)
+
+  // Derive 64-byte key using HKDF (salt=identity hash, info=undefined)
+  const derivedKey = hkdf(sha256, sharedSecret, recipientIdentityHash, undefined, 64)
+
+  // Encrypt with Reticulum's modified Fernet
+  const fernetToken = reticulumFernetEncrypt(plaintext, derivedKey)
+
+  // Prepend ephemeral public key
+  const encryptedData = new Uint8Array(ephemeralPub.length + fernetToken.length)
+  encryptedData.set(ephemeralPub, 0)
+  encryptedData.set(fernetToken, ephemeralPub.length)
+
+  return encryptedData
+}
+
+/**
+ * Build an encrypted DATA packet for LXMF/NomadNet
+ *
+ * @param {Object} message - Message content
+ * @param {string} message.content - Message body text
+ * @param {string} message.title - Message title (optional, empty string for chat)
+ * @param {Object} message.fields - Additional fields (optional, empty object)
+ * @param {Uint8Array} recipientDestinationHash - Recipient's destination hash (16 bytes)
+ * @param {Uint8Array} recipientRatchetPub - Recipient's current ratchet public key (32 bytes)
+ * @param {Uint8Array} recipientIdentityHash - Recipient's identity hash (16 bytes)
+ * @returns {Object} Complete packet ready for buildPacket()
+ */
+export function buildData(message, recipientDestinationHash, recipientRatchetPub, recipientIdentityHash) {
+  const timestamp = Date.now() / 1000
+  const title = new Uint8Array(message.title ? new TextEncoder().encode(message.title) : [])
+  const content = new TextEncoder().encode(message.content || '')
+  const fields = message.fields || {}
+
+  // Pack message data as msgpack array
+  const messageData = pack([timestamp, title, content, fields])
+
+  // Reticulum adds 80 bytes of header before the message data
+  // This includes routing info, packet type, etc.
+  // For now, we'll use zeros - you may need to adjust based on actual Reticulum format
+  const header = new Uint8Array(80)
+  const plaintext = new Uint8Array([...header, ...messageData])
+
+  // Encrypt the plaintext
+  const encryptedData = encryptData(plaintext, recipientRatchetPub, recipientIdentityHash)
+
+  // Build DATA packet structure
+  return {
+    ifac: 0,
+    headerType: 0, // Single address
+    contextFlag: 0, // No special context
+    propogationType: 0, // Normal routing
+    destinationType: 0, // Single destination
+    packetType: 0, // DATA packet
+    hops: 0,
+    destinationHash: recipientDestinationHash,
+    context: 0,
+    data: encryptedData
+  }
+}
