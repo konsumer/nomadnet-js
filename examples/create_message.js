@@ -1,7 +1,7 @@
 // this will create a message to read from python (to test JS encryption) use decrypt_message.py to check
 
 import { bytesToHex } from '@noble/curves/utils.js'
-import { unserializeIdentity, buildMessage, loadPacket, processData } from '../src/index.js'
+import { unserializeIdentity, buildMessage, loadPacket, processMessage } from '../src/index.js'
 import { keys, ratchets } from './demo_data.js'
 
 const clientA = unserializeIdentity(keys.clientA)
@@ -23,6 +23,6 @@ const packet = loadPacket(messageBytes)
 // console.log('\nHere is packet:')
 // console.log(packet)
 
-const parsed = processData(packet, identities[packet.destinationHash], ratchets)
+const parsed = processMessage(packet, identities[packet.destinationHash], ratchets)
 console.log('\nHere is decrypted:')
 console.log(parsed)

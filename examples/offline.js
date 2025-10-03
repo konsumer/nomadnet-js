@@ -1,7 +1,7 @@
 // manually offline parsing real traffic (between 2 official clients) using real keys
 
 import { bytesToHex } from '@noble/curves/utils.js'
-import { loadPacket, parseAnnounce, processData, identityDecrypt, unserializeIdentity, byteCompare, PACKET_ANNOUNCE, PACKET_DATA, PACKET_PROOF } from '../src/index.js'
+import { loadPacket, parseAnnounce, processMessage, identityDecrypt, unserializeIdentity, byteCompare, PACKET_ANNOUNCE, PACKET_DATA, PACKET_PROOF } from '../src/index.js'
 import { keys, ratchets, packets } from './demo_data.js'
 import { inspect } from 'node:util'
 
@@ -43,7 +43,7 @@ for (const p of packets) {
   }
 
   if (packet.packetType === PACKET_DATA) {
-    const { timestamp, title, content } = processData(packet, identities[packet.destinationHash], ratchets)
+    const { timestamp, title, content } = processMessage(packet, identities[packet.destinationHash], ratchets)
     console.log(`DATA (${bytesToHex(packet.destinationHash)})`)
     console.log('  Received message:')
     console.log(indentString(`Time: ${new Date(timestamp * 1000)}\nTitle: ${decoder.decode(title)}\nContent: ${decoder.decode(content)}`, 2))

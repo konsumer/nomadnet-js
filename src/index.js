@@ -341,15 +341,10 @@ export function identityDecrypt(data, identity, ratchets = []) {
 /**
  * Process a DATA packet
  */
-export function processData(packet, identity, ratchets = []) {
+export function processMessage(packet, identity, ratchets = []) {
   const decryptedBytes = identityDecrypt(packet.data, identity, ratchets)
-
-  // Skip first 80 bytes (Reticulum header/metadata)
   const messageData = decryptedBytes.slice(80)
-
-  // Unpack msgpack
   const [timestamp, title, content, fields] = unpack(messageData)
-
   return { timestamp, title, content, fields }
 }
 
