@@ -85,7 +85,7 @@ export function pubFromPrivate({ encPriv, sigPriv }) {
   return { encPub, sigPub }
 }
 
-// compare if 2 arrays have equal value, using contant-time (prevents sideband attacks)
+// compare if 2 arrays have equal value, using constant-time (prevents sideband attacks)
 export function constantTimeCompare(a, b) {
   if (a.length !== b.length) return false
   let result = 0

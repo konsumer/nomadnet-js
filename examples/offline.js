@@ -4,11 +4,15 @@ import { bytesToHex } from '@noble/curves/utils.js'
 import { loadPacket, parseAnnounce, decryptMessage, unserializeIdentity, byteCompare, PACKET_ANNOUNCE, PACKET_DATA, PACKET_PROOF } from '../src/index.js'
 import { keys, ratchets, packets } from './demo_data.js'
 
+const indentString = (str='', indentLevel = 1, indentChar = '  ') => str.split('\n').map(line => indentChar.repeat(indentLevel) + line).join('\n');
+
 const clientA = unserializeIdentity(keys.clientA)
 const clientB = unserializeIdentity(keys.clientB)
-const identities = {
-  [clientA.destinationHash]: clientA,
-  [clientB.destinationHash]: clientB
+
+// since there are only 2 peers, this just lets you pick the "other one"
+const other = {
+  [clientB.destinationHash]: clientA,
+  [clientA.destinationHash]: clientB
 }
 
 console.log(`Client A LXMF Address: ${bytesToHex(clientA.destinationHash)}`)
@@ -22,10 +26,10 @@ for (const p of packets) {
   }
 
   if (packet.packetType === PACKET_DATA) {
-    const identity = identities[packet.destinationHash]
-    const message = await decryptMessage(packet, identity, ratchets)
+    const message = await decryptMessage(packet, other[packet.destinationHash], ratchets)
     console.log(`DATA (${bytesToHex(packet.destinationHash)})`)
-    console.log(message)
+    console.log('  Received message:')
+    console.log(indentString(message || 'None', 2))
   }
 
   if (packet.packetType === PACKET_PROOF) {
