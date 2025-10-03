@@ -303,21 +303,16 @@ function reticulumFernetDecrypt(token, derivedKey64) {
   if (!hmacMatch) throw new Error('HMAC verification failed')
 
   // Try different approaches with @noble/ciphers
-  try {
-    // Option 1: Direct decrypt call
-    const plaintext = cbc(encryptionKey, iv).decrypt(ciphertext)
+  // Option 1: Direct decrypt call
+  const plaintext = cbc(encryptionKey, iv).decrypt(ciphertext)
 
-    // Manually remove PKCS7 padding
-    const paddingLength = plaintext[plaintext.length - 1]
-    if (paddingLength > 0 && paddingLength <= 16) {
-      plaintext = plaintext.slice(0, plaintext.length - paddingLength)
-    }
-
-    return plaintext
-  } catch (e) {
-    console.log('Decrypt error:', e)
-    throw e
+  // Manually remove PKCS7 padding
+  const paddingLength = plaintext[plaintext.length - 1]
+  if (paddingLength > 0 && paddingLength <= 16) {
+    plaintext = plaintext.slice(0, plaintext.length - paddingLength)
   }
+
+  return plaintext
 }
 
 /**
