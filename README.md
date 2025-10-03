@@ -8,6 +8,8 @@ The goal is to be able to inter-operate with [nomadnet](https://github.com/markq
 
 I am doing all my testing over a websocket, so it will work on web & native in a similar way, but this library is really about identity-management and LXMF packet-handling, and should work over any transport.
 
+See [notes](Reticulum.md) for structure of packets.
+
 ## examples
 
 I have some examples in [examples/](examples/)
