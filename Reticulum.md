@@ -185,7 +185,7 @@ PROOF (d7c0e833f0cbde9f9133cd9e7d508b1a):  0300d7c0e833f0cbde9f9133cd9e7d508b1a0
 Let's break down the first one, even further:
 
 ```
-    HEADER                    ADDRESS                 CONTEXT    DATA
+    HEADER(1)               ADDRESS(16)              CONTEXT(1)   DATA
 b00100001 0x00 | 0x072ec44973a8dee8e28d230fb4af8fe4 |  0x00   |  ...
  || | | |    |
  || | | |    +-- Hops                = 0
@@ -195,3 +195,30 @@ b00100001 0x00 | 0x072ec44973a8dee8e28d230fb4af8fe4 |  0x00   |  ...
  |+------------- Header Type         = 0 (one address field, not 2)
  +-------------- Access Codes (IFAC) = DISABLED
 ```
+
+In ANNOUNCE packets, it's got this in DATA field:
+
+```
+If contextFlag is 1:
+  RATCHET(32) | SIGNATURE(64) | APP_DATA
+else:
+  SIGNATURE(64) | APP_DATA
+```
+
+So here, that first packet, DATA looks like this:
+
+```
+    RATCHET(32)                 SIGNATURE(64)              APP_DATA
+0xe2bb21108b2cbc900.... | bad6d8654e72661ddc089b0649.... | ...
+
+```
+
+With RATCHET, it's an ID (random number) you can create a shared private key, using the announce-packet's public key, your private key, that ID, and send DATA messages to it, using that.
+
+Commonly, APP_DATA is a msgpack array, here it is:
+
+```js
+;[[65, 110, 111, 110, 121, 109, 111, 117, 115, 32, 80, 101, 101, 114], null]
+```
+
+The first element is UTF8 encoded bytes (not msgepack string): `Anonymous Peer`, which is the name. Other clients put additional stuff in here, like meshchat includes icons (emojis).

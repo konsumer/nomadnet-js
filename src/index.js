@@ -3,7 +3,7 @@ import { sha256 } from '@noble/hashes/sha2.js'
 import { hkdf } from '@noble/hashes/hkdf.js'
 import { cbc } from '@noble/ciphers/aes.js'
 import { hmac } from '@noble/hashes/hmac.js'
-import { hexToBytes, bytesToHex, concatBytes } from '@noble/curves/utils.js'
+import { hexToBytes, bytesToHex, concatBytes, randomBytes } from '@noble/curves/utils.js'
 import { unpack, pack } from 'msgpackr'
 
 const encoder = new TextEncoder()
@@ -44,10 +44,16 @@ export const CONTEXT_LINKPROOF = 0xfd // Packet is a link packet proof
 export const CONTEXT_LRRTT = 0xfe // Packet is a link request round-trip time measurement
 export const CONTEXT_LRPROOF = 0xff // Packet is a link request proof
 
+// Packet propagation-types
+export const PROPOGATION_BROADCAST = 0x00
+export const PROPOGATION_TRANSPORT = 0x01
+export const PROPOGATION_RELAY = 0x02
+export const PROPOGATION_TUNNEL = 0x03
+
 // Serialize identity as just 2 privatge keys, encopded as hex-string
 export const serializeIdentity = ({ encPriv, sigPriv }) => bytesToHex(new Uint8Array([...encPriv, ...sigPriv]))
 
-// Deserialize identity private keys (hex string of 2 keys) and derive public & address-info 
+// Deserialize identity private keys (hex string of 2 keys) and derive public & address-info
 export const unserializeIdentity = (s) => {
   const keyBytes = hexToBytes(s)
   let id = {
@@ -85,6 +91,8 @@ export function pubFromPrivate({ encPriv, sigPriv }) {
   return { encPub, sigPub }
 }
 
+// to use: create a shared-key with x25519.getSharedSecret(myRatchetPriv, theirRatchetPubFromAnnounce)
+
 // compare if 2 arrays have equal value, using constant-time (prevents sideband attacks)
 export function constantTimeCompare(a, b) {
   if (a.length !== b.length) return false
@@ -106,19 +114,20 @@ export function byteCompare(a, b) {
   return true
 }
 
-// Parse a reticulum packet into it's parts 
+// Parse a reticulum packet into it's parts
 export function loadPacket(buffer) {
+  const flags = buffer[0]
   const out = {
-    flags: buffer[0],
     hops: buffer[1],
     raw: new Uint8Array(buffer)
   }
 
-  out.headerType = (out.flags & 0b01000000) >> 6
-  out.contextFlag = (out.flags & 0b00100000) >> 5
-  out.transportType = (out.flags & 0b00010000) >> 4
-  out.destinationType = (out.flags & 0b00001100) >> 2
-  out.packetType = out.flags & 0b00000011
+  out.ifac = (flags & 0b10000000) >> 7
+  out.headerType = (flags & 0b01000000) >> 6
+  out.contextFlag = (flags & 0b00100000) >> 5
+  out.propogationType = (flags & 0b00010000) >> 4
+  out.destinationType = (flags & 0b00001100) >> 2
+  out.packetType = flags & 0b00000011
 
   // 2 addresses?
   if (out.headerType === 1) {
@@ -137,40 +146,37 @@ export function loadPacket(buffer) {
 // Verify and parse an announce packet (output from loadPacket)
 export function parseAnnounce(packet) {
   const out = { ...packet }
-
   const keysize = 64
   const ratchetsize = 32
   const name_hash_len = 10
+  const random_hash_len = 10 // Not 32!
   const sig_len = 64
 
   out.pubKeyEncrypt = packet.data.slice(0, keysize / 2)
   out.pubKeySignature = packet.data.slice(keysize / 2, keysize)
 
   out.nameHash = packet.data.slice(keysize, keysize + name_hash_len)
-  out.randomHash = packet.data.slice(keysize + name_hash_len, keysize + name_hash_len + 10)
+  out.randomHash = packet.data.slice(keysize + name_hash_len, keysize + name_hash_len + random_hash_len)
 
+  // does this packet have a ratchet pubkey?
   if (packet.contextFlag === 1) {
-    out.ratchet = packet.data.slice(keysize + name_hash_len + 10, keysize + name_hash_len + 10 + ratchetsize)
-    out.signature = packet.data.slice(keysize + name_hash_len + 10 + ratchetsize, keysize + name_hash_len + 10 + ratchetsize + sig_len)
-    if (packet.data.length > keysize + name_hash_len + 10 + sig_len + ratchetsize) {
-      out.appData = packet.data.slice(keysize + name_hash_len + 10 + sig_len + ratchetsize)
-    } else {
-      out.appData = new Uint8Array()
+    out.ratchetPub = packet.data.slice(keysize + name_hash_len + random_hash_len, keysize + name_hash_len + random_hash_len + ratchetsize)
+    out.signature = packet.data.slice(keysize + name_hash_len + random_hash_len + ratchetsize, keysize + name_hash_len + random_hash_len + ratchetsize + sig_len)
+    if (packet.data.length > keysize + name_hash_len + random_hash_len + ratchetsize + sig_len) {
+      out.appData = packet.data.slice(keysize + name_hash_len + random_hash_len + ratchetsize + sig_len)
     }
   } else {
-    out.ratchet = new Uint8Array()
-    out.signature = packet.data.slice(keysize + name_hash_len + 10, keysize + name_hash_len + 10 + sig_len)
-    if (packet.data.length > keysize + name_hash_len + 10 + sig_len) {
-      out.appData = packet.data.slice(keysize + name_hash_len + 10 + sig_len)
-    } else {
-      out.appData = new Uint8Array()
+    out.ratchetPub = out.pubKeyEncrypt
+    out.signature = packet.data.slice(keysize + name_hash_len + random_hash_len, keysize + name_hash_len + random_hash_len + sig_len)
+    if (packet.data.length > keysize + name_hash_len + random_hash_len + sig_len) {
+      out.appData = packet.data.slice(keysize + name_hash_len + random_hash_len + sig_len)
     }
   }
 
-  const signedData = new Uint8Array([...out.destinationHash, ...out.pubKeyEncrypt, ...out.pubKeySignature, ...out.nameHash, ...out.randomHash, ...out.ratchet, ...out.appData])
+  const signedData = new Uint8Array([...out.destinationHash, ...out.pubKeyEncrypt, ...out.pubKeySignature, ...out.nameHash, ...out.randomHash, ...(out.ratchetPub || []), ...(out.appData || [])])
   out.verified = ed25519.verify(out.signature, signedData, out.pubKeySignature)
 
-  if (out.appData.length) {
+  if (out.appData?.length) {
     try {
       out.appData = unpack(out.appData)
       out.peerName = decoder.decode(out.appData[0])
@@ -180,7 +186,180 @@ export function parseAnnounce(packet) {
   return out
 }
 
-// this is still not working
-export async function decryptMessage(packet, identity, ratchets=[]) {
-  return null
+// Build a raw Reticulum packet from components (Reverse of loadPacket())
+export function buildPacket(packet) {
+  // Build flags byte from components
+  const flags = ((packet.ifac || 0) << 7) | ((packet.headerType || 0) << 6) | ((packet.contextFlag || 0) << 5) | ((packet.propogationType || 0) << 4) | ((packet.destinationType || 0) << 2) | (packet.packetType || 0)
+
+  const parts = [new Uint8Array([flags]), new Uint8Array([packet.hops || 0])]
+
+  // Header type 1 = two addresses (transport + destination)
+  if (packet.headerType === 1) {
+    parts.push(packet.transportId) // 16 bytes
+    parts.push(packet.destinationHash) // 16 bytes
+    parts.push(new Uint8Array([packet.context || 0]))
+  } else {
+    // Header type 0 = single address (destination only)
+    parts.push(packet.destinationHash) // 16 bytes
+    parts.push(new Uint8Array([packet.context || 0]))
+  }
+
+  // Add data payload
+  if (packet.data) {
+    parts.push(packet.data)
+  }
+
+  // Concatenate all parts
+  const totalLength = parts.reduce((sum, arr) => sum + arr.length, 0)
+  const buffer = new Uint8Array(totalLength)
+  let offset = 0
+
+  for (const part of parts) {
+    buffer.set(part, offset)
+    offset += part.length
+  }
+
+  return buffer
+}
+
+// Build an ANNOUNCE packet from components (Reverse of parseAnnounce())
+export function buildAnnounce(announce, identity) {
+  const parts = []
+
+  // Public keys (64 bytes total)
+  parts.push(identity.encPub) // 32 bytes
+  parts.push(identity.sigPub) // 32 bytes
+
+  // Hashes
+  parts.push(announce.nameHash) // 10 bytes
+  parts.push(announce.randomHash) // 10 bytes
+
+  // Ratchet public key (only if enabled)
+  if (announce.contextFlag && announce.ratchetPub) {
+    parts.push(announce.ratchetPub) // 32 bytes
+  }
+
+  // App data (optional)
+  if (announce.appData) {
+    parts.push(announce.appData)
+  }
+
+  // Build data section
+  const dataLength = parts.reduce((sum, arr) => sum + arr.length, 0)
+  const data = new Uint8Array(dataLength)
+  let offset = 0
+  for (const part of parts) {
+    data.set(part, offset)
+    offset += part.length
+  }
+
+  // Create signed data (what gets signed)
+  const signedData = new Uint8Array([...announce.destinationHash, ...announce.pubKeyEncrypt, ...announce.pubKeySignature, ...announce.nameHash, ...announce.randomHash, ...(announce.useRatchet && announce.ratchetPub ? announce.ratchetPub : []), ...(announce.appData || [])])
+
+  // Sign with Ed25519 private key
+  const signature = ed25519.sign(signedData, identity.sigPriv)
+
+  // Add signature to data
+  const finalData = new Uint8Array(data.length + signature.length)
+  finalData.set(data, 0)
+  finalData.set(signature, data.length)
+
+  const { ifac = 0, headerType, contextFlag, propogationType = PROPOGATION_BROADCAST, destinationType = DESTINATION_SINGLE, packetType = PACKET_ANNOUNCE, hops = 0, destinationHash, transportId, context = 0 } = announce
+
+  // Build complete packet structure
+  return buildPacket({
+    ifac,
+    headerType,
+    contextFlag,
+    propogationType,
+    destinationType,
+    packetType,
+    hops,
+    destinationHash,
+    transportId,
+    context,
+    data: finalData
+  })
+}
+
+function reticulumFernetDecrypt(token, derivedKey64) {
+  if (token.length < 48) throw new Error('Invalid token length')
+
+  const iv = token.slice(0, 16)
+  const ciphertext = token.slice(16, -32)
+  const receivedHmac = token.slice(-32)
+
+  const signingKey = derivedKey64.slice(0, 32)
+  const encryptionKey = derivedKey64.slice(32, 64)
+
+  // Verify HMAC
+  const hmacData = token.slice(0, -32)
+  const computedHmac = hmac(sha256, signingKey, hmacData)
+
+  let hmacMatch = true
+  for (let i = 0; i < 32; i++) {
+    if (receivedHmac[i] !== computedHmac[i]) hmacMatch = false
+  }
+  if (!hmacMatch) throw new Error('HMAC verification failed')
+
+  // Try different approaches with @noble/ciphers
+  try {
+    // Option 1: Direct decrypt call
+    const plaintext = cbc(encryptionKey, iv).decrypt(ciphertext)
+
+    // Manually remove PKCS7 padding
+    const paddingLength = plaintext[plaintext.length - 1]
+    if (paddingLength > 0 && paddingLength <= 16) {
+      plaintext = plaintext.slice(0, plaintext.length - paddingLength)
+    }
+
+    return plaintext
+  } catch (e) {
+    console.log('Decrypt error:', e)
+    throw e
+  }
+}
+
+/**
+ * Decrypt a Reticulum DATA packet using ratchets
+ */
+export function identityDecrypt(data, identity, ratchets = []) {
+  const ephemeralPub = data.slice(0, 32)
+  const ciphertext = data.slice(32)
+
+  for (let i = 0; i < ratchets.length; i++) {
+    const privateKey = ratchets[i]
+
+    try {
+      // Perform ECDH
+      const sharedSecret = x25519.getSharedSecret(privateKey, ephemeralPub)
+
+      // Derive 64 bytes using HKDF (salt=identity hash, info=undefined)
+      const derivedKey = hkdf(sha256, sharedSecret, identity.identityHash, undefined, 64)
+
+      // Decrypt
+      const plaintext = reticulumFernetDecrypt(ciphertext, derivedKey)
+
+      return plaintext
+    } catch (e) {
+      continue
+    }
+  }
+
+  throw new Error('Decryption failed with all available ratchets')
+}
+
+/**
+ * Process a DATA packet
+ */
+export function processData(packet, identity, ratchets = []) {
+  const decryptedBytes = identityDecrypt(packet.data, identity, ratchets)
+
+  // Skip first 80 bytes (Reticulum header/metadata)
+  const messageData = decryptedBytes.slice(80)
+
+  // Unpack msgpack
+  const [timestamp, title, content, fields] = unpack(messageData)
+
+  return { timestamp, title, content, fields }
 }
