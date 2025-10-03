@@ -1,7 +1,6 @@
-See [here](https://reticulum.network/manual/understanding.html) for an overview of packets. Here, I want to roecord the basic structure of different real-world packets, keys, etc, in high-level code, so you more easily write your own parser. I will focus on LXMF, and format stuff that is common to popular clients (nomadnet, meshchat, sideband, etc.) 
+See [here](https://reticulum.network/manual/understanding.html) for an overview of packets. Here, I want to roecord the basic structure of different real-world packets, keys, etc, in high-level code, so you more easily write your own parser. I will focus on LXMF, and format stuff that is common to popular clients (nomadnet, meshchat, sideband, etc.)
 
 This library will do all this stuff for you, so don;t need to understand all this, to get it working.
-
 
 ## packet
 
@@ -11,26 +10,26 @@ The basic unit of Reticulum is packets. They look like this, in terms of bytes:
 [HEADER 2 bytes] [ADDRESSES 16/32 bytes] [CONTEXT 1 byte] [DATA 0-465 bytes]
 ```
 
-* The HEADER field is 2 bytes long.
-  * Byte 1: `IFAC Flag`, `Header Type`, `Context Flag`, `Propagation Type`, `Destination Type` and `Packet Type`
-  * Byte 2: Number of hops
-* Interface Access Code field if the IFAC flag was set.
-  * The length of the Interface Access Code can vary from 1 to 64 bytes according to physical interface capabilities and configuration.
-* The `ADDRESSES` field contains either 1 or 2 addresses.
-  * Each address is 16 bytes long.
-  * The Header Type flag in the `HEADER` field determines whether the `ADDRESSES` field contains 1 or 2 addresses.
-  * Addresses are SHA-256 hashes truncated to 16 bytes.
-* The `CONTEXT` field is 1 byte.
-  * It is used by Reticulum to determine packet context.
-* The `DATA` field is between 0 and 465 bytes.
-  * It contains the packets data payload.
-
+- The HEADER field is 2 bytes long.
+  - Byte 1: `IFAC Flag`, `Header Type`, `Context Flag`, `Propagation Type`, `Destination Type` and `Packet Type`
+  - Byte 2: Number of hops
+- Interface Access Code field if the IFAC flag was set.
+  - The length of the Interface Access Code can vary from 1 to 64 bytes according to physical interface capabilities and configuration.
+- The `ADDRESSES` field contains either 1 or 2 addresses.
+  - Each address is 16 bytes long.
+  - The Header Type flag in the `HEADER` field determines whether the `ADDRESSES` field contains 1 or 2 addresses.
+  - Addresses are SHA-256 hashes truncated to 16 bytes.
+- The `CONTEXT` field is 1 byte.
+  - It is used by Reticulum to determine packet context.
+- The `DATA` field is between 0 and 465 bytes.
+  - It contains the packets data payload.
 
 So to get all your fields, it looks like this:
 
 ```js
 packet = { flags: bytes[0], hops: bytes[1] }
 
+packet.ifac = (packet.flags & 0b10000000) >> 7
 packet.headerType = (packet.flags & 0b01000000) >> 6
 packet.contextFlag = (packet.flags & 0b00100000) >> 5
 packet.propogationType = (packet.flags & 0b00010000) >> 4
@@ -64,54 +63,51 @@ PACKET_ANNOUNCE = 0x1
 PACKET_LINKREQUEST = 0x2
 PACKET_PROOF = 0x3
 
-
 // desitnationType
 
 DESTINATION_SINGLE = 0x0 // Single (encrypted)
-DESTINATION_GROUP = 0x1  // Group (shared key)
-DESTINATION_PLAIN = 0x2  // Plaintext
-DESTINATION_LINK = 0x3   // Link (uses link_id in header)
-
+DESTINATION_GROUP = 0x1 // Group (shared key)
+DESTINATION_PLAIN = 0x2 // Plaintext
+DESTINATION_LINK = 0x3 // Link (uses link_id in header)
 
 // contextFlag
 
-CONTEXT_NONE = 0x00           // Generic data packet
-CONTEXT_RESOURCE = 0x01       // Packet is part of a resource
-CONTEXT_RESOURCE_ADV = 0x02   // Packet is a resource advertisement
-CONTEXT_RESOURCE_REQ = 0x03   // Packet is a resource part request
-CONTEXT_RESOURCE_HMU = 0x04   // Packet is a resource hashmap update
-CONTEXT_RESOURCE_PRF = 0x05   // Packet is a resource proof
-CONTEXT_RESOURCE_ICL = 0x06   // Packet is a resource initiator cancel message
-CONTEXT_RESOURCE_RCL = 0x07   // Packet is a resource receiver cancel message
-CONTEXT_CACHE_REQUEST = 0x08  // Packet is a cache request
-CONTEXT_REQUEST = 0x09        // Packet is a request
-CONTEXT_RESPONSE = 0x0a       // Packet is a response to a request
-CONTEXT_PATH_RESPONSE = 0x0b  // Packet is a response to a path request
-CONTEXT_COMMAND = 0x0c        // Packet is a command
+CONTEXT_NONE = 0x00 // Generic data packet
+CONTEXT_RESOURCE = 0x01 // Packet is part of a resource
+CONTEXT_RESOURCE_ADV = 0x02 // Packet is a resource advertisement
+CONTEXT_RESOURCE_REQ = 0x03 // Packet is a resource part request
+CONTEXT_RESOURCE_HMU = 0x04 // Packet is a resource hashmap update
+CONTEXT_RESOURCE_PRF = 0x05 // Packet is a resource proof
+CONTEXT_RESOURCE_ICL = 0x06 // Packet is a resource initiator cancel message
+CONTEXT_RESOURCE_RCL = 0x07 // Packet is a resource receiver cancel message
+CONTEXT_CACHE_REQUEST = 0x08 // Packet is a cache request
+CONTEXT_REQUEST = 0x09 // Packet is a request
+CONTEXT_RESPONSE = 0x0a // Packet is a response to a request
+CONTEXT_PATH_RESPONSE = 0x0b // Packet is a response to a path request
+CONTEXT_COMMAND = 0x0c // Packet is a command
 CONTEXT_COMMAND_STATUS = 0x0d // Packet is a status of an executed command
-CONTEXT_CHANNEL = 0x0e        // Packet contains link channel data
-CONTEXT_KEEPALIVE = 0xfa      // Packet is a keepalive packet
-CONTEXT_LINKIDENTIFY = 0xfb   // Packet is a link peer identification proof
-CONTEXT_LINKCLOSE = 0xfc      // Packet is a link close message
-CONTEXT_LINKPROOF = 0xfd      // Packet is a link packet proof
-CONTEXT_LRRTT = 0xfe          // Packet is a link request round-trip time measurement
-CONTEXT_LRPROOF = 0xff        // Packet is a link request proof
-
+CONTEXT_CHANNEL = 0x0e // Packet contains link channel data
+CONTEXT_KEEPALIVE = 0xfa // Packet is a keepalive packet
+CONTEXT_LINKIDENTIFY = 0xfb // Packet is a link peer identification proof
+CONTEXT_LINKCLOSE = 0xfc // Packet is a link close message
+CONTEXT_LINKPROOF = 0xfd // Packet is a link packet proof
+CONTEXT_LRRTT = 0xfe // Packet is a link request round-trip time measurement
+CONTEXT_LRPROOF = 0xff // Packet is a link request proof
 
 // propagationType
 
-TRANSPORT_BROADCAST = 0x00
-TRANSPORT_TRANSPORT = 0x01
-TRANSPORT_RELAY = 0x02
-TRANSPORT_TUNNEL = 0x03
-````
+PROPOGATION_BROADCAST = 0x00
+PROPOGATION_TRANSPORT = 0x01
+PROPOGATION_RELAY = 0x02
+PROPOGATION_TUNNEL = 0x03
+```
 
 ### ANNOUNCE
 
 This is how a peer tells other peers about itself. It contains the public-keys for encryption & signing (2 seperate keys, called ratchet.)
 
 ```js
-const out = {...packet}
+const out = { ...packet }
 const keysize = 64
 const ratchetsize = 32
 const name_hash_len = 10
@@ -138,30 +134,18 @@ if (packet.contextFlag === 1) {
 }
 ```
 
-Most of the ANNOUNCE packets I see are contextFlag=1, which should mean "Packet is part of a resource", but it seems to just indicate if it includes just signature, or signature+ratchet (most common.)
-
 On LXMF, `appData` is a [msgpack](https://msgpack.org/) array, and the first-field is a byte-array of the peer-name.
 
 Here is how you verify a signature (from above):
 
 ```js
-const signedData = new Uint8Array([
-  ...out.destinationHash,
-  ...out.pubKeyEncrypt,
-  ...out.pubKeySignature,
-  ...out.nameHash,
-  ...out.randomHash,
-  ...(out.ratchet || []),
-  ...(out.appData || [])
-])
+const signedData = new Uint8Array([...out.destinationHash, ...out.pubKeyEncrypt, ...out.pubKeySignature, ...out.nameHash, ...out.randomHash, ...(out.ratchet || []), ...(out.appData || [])])
 out.verified = ed25519.verify(out.signature, signedData, out.pubKeySignature)
 ```
-
 
 ### DATA
 
 If a message is small (less than 465 bytes) "opportunistic delivery" will be used, which means use the last ratchet that the peer ANNOUNCEd with. It means no LINK (key-exchange) is needed.
-
 
 ### LINKREQUEST
 
@@ -173,7 +157,7 @@ This is how your client tells the peer that it got the message. The destination-
 
 ### Examples
 
-Here is  a concrete example:
+Here is a concrete example:
 
 ```
 ANNOUNCE (072ec44973a8dee8e28d230fb4af8fe4):  2100072ec44973a8dee8e28d230fb4af8fe400a2b9b02fb4749fcf8458762d1be0ae67ff1caa47fb0a52f4c2bd6dd07860a738da50a87f884e6e64aaa70b44d20868144e3e26ffa001c60a7c797dbae5078ece6ec60bc318e2c0f0d90873408275530068de1039e2bb21108b2cbc900b476290ab7867441446db366a70fb8ed1448ca0e889bd65bad6d8654e72661ddc089b06495ab91a57afc5700e095f021aa8cec04f22ba55438efc3ab1e2a91b8d17bd259313f175dff040827fdf1111c88bef501676380b92c40e416e6f6e796d6f75732050656572c0
@@ -191,13 +175,12 @@ PROOF (d7c0e833f0cbde9f9133cd9e7d508b1a):  0300d7c0e833f0cbde9f9133cd9e7d508b1a0
 
 - `072ec444` announces themselves, everyone else records their ratchet (pubkey), address, and maybe some info (like their peer-name)
 - `76a93cda` announces themselves, everyone else records their ratchet (pubkey), address, and maybe some info (like their peer-name)
-- `072ec444` sends a message to `76a93cda`. It's small, so they use ratchets and "opportunistic delivery", meaning they created a shared private key for  `072ec444`+`76a93cda` using the pubkey `76a93cda` sent in their ANNOUNCE
+- `072ec444` sends a message to `76a93cda`. It's small, so they use ratchets and "opportunistic delivery", meaning they created a shared private key for `072ec444`+`76a93cda` using the pubkey `76a93cda` sent in their ANNOUNCE
 - `76a93cda` gets the message, they also create a shared private key for `072ec444`+`76a93cda` using the pubkey `072ec444` sent in their ANNOUNCE
 - Using that ratchet-key, `76a93cda` reads the messgae, gets the message-id, and sends a PROOF to tell `072ec444` (indirectly, so no one else knows) they got it
-- `76a93cda` sends a message to `072ec444`. It's small, so they use ratchets and "opportunistic delivery", meaning they created a shared private key for  `072ec444`+`76a93cda` using the pubkey `072ec444` sent in their ANNOUNCE
+- `76a93cda` sends a message to `072ec444`. It's small, so they use ratchets and "opportunistic delivery", meaning they created a shared private key for `072ec444`+`76a93cda` using the pubkey `072ec444` sent in their ANNOUNCE
 - `072ec444` gets the message, they also create a shared private key for `072ec444`+`76a93cda` using the pubkey `76a93cda` sent in their ANNOUNCE
 - Using that ratchet-key, `072ec444` reads the messgae, gets the message-id, and sends a PROOF to tell `76a93cda` (indirectly, so no one else knows) they got it
-
 
 Let's break down the first one, even further:
 
@@ -205,13 +188,10 @@ Let's break down the first one, even further:
     HEADER                    ADDRESS                 CONTEXT    DATA
 b00100001 0x00 | 0x072ec44973a8dee8e28d230fb4af8fe4 |  0x00   |  ...
  || | | |    |
- || | | |    +-- Hops             = 0
- || | | +------- Packet Type      = ANNOUNCE
- || | +--------- Destination Type = SINGLE
- || +----------- Propagation Type = BROADCAST
- |+------------- Header Type      = 0 (one address field, not 2)
- +-------------- Access Codes     = DISABLED
+ || | | |    +-- Hops                = 0
+ || | | +------- Packet Type         = ANNOUNCE
+ || | +--------- Destination Type    = SINGLE
+ || +----------- Propagation Type    = BROADCAST
+ |+------------- Header Type         = 0 (one address field, not 2)
+ +-------------- Access Codes (IFAC) = DISABLED
 ```
-
-DATA here contains ratchet pubkeys (so you can quickly send it a message, without a LINK.)
-
