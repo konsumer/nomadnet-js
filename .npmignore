@@ -1,0 +1,6 @@
+test/
+demo/
+examples/
+.prettierrc
+*.md
+LICENSE
