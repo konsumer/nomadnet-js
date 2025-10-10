@@ -1,3 +1,5 @@
+// Real traffic & keys for testing & offline-reproduction
+
 import { hexToBytes } from '@noble/curves/utils.js'
 
 export const keys = {

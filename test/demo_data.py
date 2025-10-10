@@ -1,4 +1,4 @@
-# this has 2 client secret keys & some traffic for testing key/message exchange
+# Real traffic & keys for testing & offline-reproduction
 
 # print(open('demo/a/nomad/storage/identity', 'rb').read().hex())
 # print(open('demo/b/nomad/storage/identity','rb').read().hex())
