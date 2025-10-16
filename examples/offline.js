@@ -1,55 +1,105 @@
 // manually offline parsing real traffic (between 2 official clients) using real keys
 
-import { bytesToHex } from '@noble/curves/utils.js'
-import { loadPacket, parseAnnounce, processMessage, identityDecrypt, unserializeIdentity, byteCompare, PACKET_ANNOUNCE, PACKET_DATA, PACKET_PROOF } from '../src/index.js'
-import { keys, ratchets, packets } from './demo_data.js'
-import { inspect } from 'node:util'
+// demo/demo.js
+import * as rns from '../src/index.js'
+import { keys, packets, ratchets } from './demo_data.js'
+import { hexToBytes, bytesToHex } from '@noble/curves/utils.js'
 
-import { concatBytes } from '@noble/curves/utils.js'
-import { ed25519, x25519 } from '@noble/curves/ed25519.js'
-import { sha256 } from '@noble/hashes/sha2.js'
-import { hkdf } from '@noble/hashes/hkdf.js'
-import { cbc } from '@noble/ciphers/aes.js'
-import { hmac } from '@noble/hashes/hmac.js'
-import { unpack, pack } from 'msgpackr'
-
-const indentString = (str = '', indentLevel = 1, indentChar = '  ') =>
-  str
-    .split('\n')
-    .map((line) => indentChar.repeat(indentLevel) + line)
-    .join('\n')
-
-const clientA = unserializeIdentity(keys.clientA)
-const clientB = unserializeIdentity(keys.clientB)
-
-const identities = {
-  [clientA.destinationHash]: clientA,
-  [clientB.destinationHash]: clientB
+function arraysEqual(a, b) {
+  if (!a || !b) return false
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
 }
 
-console.log(`Client A LXMF Address: ${bytesToHex(clientA.destinationHash)}`)
-console.log(`Client B LXMF Address: ${bytesToHex(clientB.destinationHash)}`)
+console.log('Reticulum Packet Parser Demo\n')
 
-const decoder = new TextDecoder()
+// Verify I get correct destination addresses
+const clientA = rns.getIdentityFromBytes(keys['072ec44973a8dee8e28d230fb4af8fe4'])
+const clientA_addr = rns.getDestinationHash(clientA, 'lxmf', 'delivery')
+console.log(`Client A: ${bytesToHex(clientA_addr)}`)
 
-for (const p of packets) {
-  const packet = loadPacket(p)
-  if (packet.packetType === PACKET_ANNOUNCE) {
-    const announce = parseAnnounce(packet)
-    console.log(`ANNOUNCE (${bytesToHex(packet.destinationHash)})\n  ${announce.verified ? 'Valid' : 'Invalid'}`)
-    console.log(`  Ratchet Pub(${announce.ratchetPub.length}): ${bytesToHex(announce.ratchetPub)}`)
-    console.log(`  Signature(${announce.signature.length}): ${bytesToHex(announce.signature)}`)
-    console.log(indentString(`App Data: ${inspect(announce.appData, null, 2)}`))
+const clientB = rns.getIdentityFromBytes(keys['76a93cda889a8c0a88451e02d53fd8b9'])
+const clientB_addr = rns.getDestinationHash(clientB, 'lxmf', 'delivery')
+console.log(`Client B: ${bytesToHex(clientB_addr)}`)
+
+// Put the addresses in easier-to-use shape
+const recipients = {
+  [bytesToHex(clientA_addr)]: clientA,
+  [bytesToHex(clientB_addr)]: clientB
+}
+
+// Track DATA packets that have been sent
+const sentPackets = {}
+
+for (const packetBytes of packets) {
+  console.log('')
+  const packet = rns.decodePacket(packetBytes)
+
+  // Validate ANNOUNCE
+  if (packet.packetType === rns.PACKET_ANNOUNCE) {
+    console.log(`ANNOUNCE to ${bytesToHex(packet.destinationHash)}`)
+    const announce = rns.announceParse(packet)
+    if (announce.valid) {
+      console.log('  Valid: Yes')
+    } else {
+      console.log('  Valid: No')
+    }
   }
 
-  if (packet.packetType === PACKET_DATA) {
-    const { timestamp, title, content } = processMessage(packet, identities[packet.destinationHash], ratchets)
-    console.log(`DATA (${bytesToHex(packet.destinationHash)})`)
-    console.log('  Received message:')
-    console.log(indentString(`Time: ${new Date(timestamp * 1000)}\nTitle: ${decoder.decode(title)}\nContent: ${decoder.decode(content)}`, 2))
+  // Decrypt DATA
+  if (packet.packetType === rns.PACKET_DATA) {
+    console.log(`DATA to ${bytesToHex(packet.destinationHash)}`)
+
+    const packetHashFull = rns.getMessageId(packet) // 32-byte for validation
+    const packetHashTruncated = packetHashFull.slice(0, 16) // 16-byte for lookup
+    sentPackets[bytesToHex(packetHashTruncated)] = {
+      destinationHash: packet.destinationHash,
+      fullHash: packetHashFull
+    }
+    console.log(`  MessageId: ${bytesToHex(packetHashTruncated)}`)
+
+    const destHashHex = bytesToHex(packet.destinationHash)
+    const recipient = recipients[destHashHex]
+
+    if (recipient) {
+      const decryptedBytes = rns.messageDecrypt(packet, recipient, ratchets)
+      if (decryptedBytes) {
+        const lxmfMessage = rns.parseLxmfMessage(decryptedBytes)
+        console.log(`  Time: ${lxmfMessage.timestamp}`)
+        console.log(`  Title: ${new TextDecoder().decode(lxmfMessage.title)}`)
+        console.log(`  Content: ${new TextDecoder().decode(lxmfMessage.content)}`)
+      } else {
+        console.log('  Decryption failed')
+      }
+    } else {
+      console.log('  Unknown recipient')
+    }
   }
 
-  if (packet.packetType === PACKET_PROOF) {
-    console.log(`PROOF (${bytesToHex(packet.destinationHash)})`)
+  // Validate PROOF
+  if (packet.packetType === rns.PACKET_PROOF) {
+    console.log(`PROOF for ${bytesToHex(packet.destinationHash)}`)
+    const destHashHex = bytesToHex(packet.destinationHash)
+
+    if (sentPackets[destHashHex]) {
+      const { destinationHash: recipientHash, fullHash: fullPacketHash } = sentPackets[destHashHex]
+      const recipientHashHex = bytesToHex(recipientHash)
+      const identity = recipients[recipientHashHex]
+
+      if (identity) {
+        if (rns.proofValidate(packet, identity, fullPacketHash)) {
+          console.log('  Valid: Yes')
+        } else {
+          console.log('  Valid: No')
+        }
+      } else {
+        console.log('  Unknown identity')
+      }
+    } else {
+      console.log(`  No Message: ${destHashHex}`)
+    }
   }
 }
