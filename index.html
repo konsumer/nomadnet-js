@@ -23,7 +23,9 @@
   <body>
     <main id="root" class="container">
       <h1><a href="https://github.com/konsumer/nomadnet-js" target="_new">NomadnetJS</a></h1>
-      <p>This is a simple demo-client that communicates with Reticulum clients over a websocket. First, you will need a private-key. You can generate one (it's not stored or sent anywhere) or input one you got, previously.</p>
+      <p>This is a simple demo-client that communicates with Reticulum clients over a websocket. First, you will need a private-key. You can generate one or input one you got, previously.</p>
+      <p>This does not persist anything (messages, your identity, etc) except peers it has seen. I may add that later, but for now, it's just a way to play around with reticulum.</p>
+
       <fieldset role="group">
         <input placeholder="PRIVATE KEY" id="inputPrivateKey" />
         <button id="buttonGenerate" class="secondary">GENERATE</button>
@@ -60,6 +62,8 @@
 <script type="module">
   import * as rns from 'rns'
   import { bytesToHex, hexToBytes, randomBytes } from '@noble/curves/utils.js'
+
+  const decoder = new TextDecoder()
 
   const WS_URL = 'wss://signal.konsumer.workers.dev/ws/reticulum'
 
@@ -107,10 +111,11 @@
         const messageId = rns.getMessageId(packet)
         console.log(`sending PROOF (${bytesToHex(messageId)})`)
         ws.send(rns.buildProof(identity, packet, messageId))
-        const plaintext = rns.messageDecrypt(packet, identity, ratchets)
-        const message = rns.parseLxmfMessage(plaintext)
+        const message = rns.parseLxmfMessage(rns.messageDecrypt(packet, identity, ratchets))
         message.sourceHex = bytesToHex(message.sourceHash)
-        console.log(message)
+        const title = decoder.decode(message.title)
+        const content = decoder.decode(message.content)
+        console.log({ ...message, title, content, timestamp: new Date(message.timestamp * 1000) })
       }
     }
 
