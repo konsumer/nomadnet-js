@@ -40,6 +40,7 @@
         <h3>Peers</h3>
         <ul id="peerList"></ul>
       </div>
+      <toast-notification id="toast"></toast-notification>
     </main>
   </body>
 </html>
@@ -115,6 +116,13 @@
         message.sourceHex = bytesToHex(message.sourceHash)
         const title = decoder.decode(message.title)
         const content = decoder.decode(message.content)
+
+        if (title.trim() === '') {
+          toast.show(`<strong>${message.sourceHex}</strong><br/>${content}`)
+        } else {
+          toast.show(`<strong>${message.sourceHex}</strong><br/><strong>${title}</strong><br/>${content}`)
+        }
+
         console.log({ ...message, title, content, timestamp: new Date(message.timestamp * 1000) })
       }
     }
@@ -167,4 +175,44 @@
       announce()
     }
   })
+
+  class ToastNotification extends HTMLElement {
+    constructor() {
+      super()
+      this.attachShadow({ mode: 'open' })
+      this.shadowRoot.innerHTML = `
+      <style>
+        .toast {
+          position: fixed;
+          bottom: 20px;
+          right: 20px;
+          background-color: #333;
+          color: white;
+          padding: 15px;
+          border-radius: 5px;
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+          opacity: 0;
+          transition: opacity 0.5s ease-in-out;
+          z-index: 1000;
+        }
+        .toast.show {
+          opacity: 1;
+        }
+      </style>
+      <div class="toast" id="toast"></div>
+    `
+      this.toastElement = this.shadowRoot.getElementById('toast')
+    }
+
+    show(message, duration = 3000) {
+      this.toastElement.innerHTML = message
+      this.toastElement.classList.add('show')
+
+      setTimeout(() => {
+        this.toastElement.classList.remove('show')
+      }, duration)
+    }
+  }
+
+  customElements.define('toast-notification', ToastNotification)
 </script>
