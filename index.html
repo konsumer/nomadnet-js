@@ -29,12 +29,12 @@
       <p>This is a simple demo-client that communicates with Reticulum clients over a websocket. First, you will need a private-key. You can generate one or input one you got, previously.</p>
       <p>This does not persist anything (messages, your identity, etc) except peers it has seen. I may add that later, but for now, it's just a way to play around with reticulum.</p>
 
-      <fieldset role="group">
+      <fieldset role="group" id="privkeyHolder">
         <input placeholder="PRIVATE KEY" id="inputPrivateKey" />
         <button id="buttonGenerate" class="secondary">GENERATE</button>
         <button id="buttonSet">SET</button>
       </fieldset>
-      <fieldset role="group" class="flex row" hidden>
+      <fieldset role="group" hidden>
         <input type="text" id="lxmfAddress" readonly class="mono" />
         <button id="buttonAnnounce">ANNOUNCE</button>
       </fieldset>
@@ -169,9 +169,7 @@
       identity = rns.getIdentityFromBytes(hexToBytes(inputPrivateKey.value))
       identity.destinationHash = rns.getDestinationHash(identity, 'lxmf', 'delivery')
       identity.destinationHex = bytesToHex(identity.destinationHash)
-      inputPrivateKey.remove()
-      buttonSet.remove()
-      buttonGenerate.remove()
+      privkeyHolder.remove()
       lxmfAddress.value = identity.destinationHex
       lxmfAddress.parentElement.removeAttribute('hidden')
       // setInterval(announce, 60000 * 60) // announce every hour
