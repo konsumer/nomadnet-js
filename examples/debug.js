@@ -2,7 +2,7 @@
 // run other clients on the same socket, and you can see their packets
 
 import { bytesToHex } from '@noble/curves/utils.js'
-import { loadPacket, PACKET_DATA, PACKET_ANNOUNCE, PACKET_LINKREQUEST, PACKET_PROOF } from '../src/index.js'
+import { decodePacket, PACKET_DATA, PACKET_ANNOUNCE, PACKET_LINKREQUEST, PACKET_PROOF } from '../src/index.js'
 
 import WebSocket from 'ws'
 
@@ -21,7 +21,7 @@ packetTypeNames[PACKET_LINKREQUEST] = 'LINKREQUEST'
 packetTypeNames[PACKET_PROOF] = 'PROOF'
 
 ws.on('message', (data) => {
-  const p = loadPacket(data)
+  const p = decodePacket(data)
   let destinationAddress = bytesToHex(p.destinationHash)
   console.log(`${packetTypeNames[p.packetType]} (${destinationAddress}): `, bytesToHex(data))
   // console.log(p)

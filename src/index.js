@@ -121,21 +121,13 @@ function _x25519Exchange(privateKey, publicKey) {
 
 // Identity functions
 export function identityCreate() {
-  const encryptPrivate = x25519.utils.randomPrivateKey()
+  const encryptPrivate = randomBytes(32)
   const encryptPublic = x25519.getPublicKey(encryptPrivate)
-
-  const signPrivate = ed25519.utils.randomPrivateKey()
+  const signPrivate = randomBytes(32)
   const signPublic = ed25519.getPublicKey(signPrivate)
-
   return {
-    public: {
-      encrypt: encryptPublic,
-      sign: signPublic
-    },
-    private: {
-      encrypt: encryptPrivate,
-      sign: signPrivate
-    }
+    public: { encrypt: encryptPublic, sign: signPublic },
+    private: { encrypt: encryptPrivate, sign: signPrivate }
   }
 }
 
@@ -164,7 +156,7 @@ export function getIdentityFromBytes(privateIdentityBytes) {
 
 // Ratchet functions
 export function ratchetCreateNew() {
-  return x25519.utils.randomPrivateKey()
+  return randomBytes(32)
 }
 
 export function ratchetGetPublic(privateRatchet) {
@@ -240,7 +232,6 @@ export function encodePacket(packet) {
   if (packet.ifacFlag) {
     headerByte |= 0b10000000
   }
-
   if (packet.headerType) {
     headerByte |= 0b01000000
   }
@@ -249,7 +240,6 @@ export function encodePacket(packet) {
   if (hasContext) {
     packet.contextFlag = true
   }
-
   if (packet.contextFlag) {
     headerByte |= 0b00100000
   }
@@ -281,6 +271,7 @@ export function encodePacket(packet) {
     parts.push(sourceHash)
   }
 
+  // CRITICAL: Only add context byte if contextFlag is true
   if (packet.contextFlag) {
     parts.push(new Uint8Array([(packet.context || 0) & 0xff]))
   }
@@ -290,6 +281,7 @@ export function encodePacket(packet) {
   const totalLength = parts.reduce((sum, part) => sum + part.length, 0)
   const result = new Uint8Array(totalLength)
   let offset = 0
+
   for (const part of parts) {
     result.set(part, offset)
     offset += part.length
@@ -526,10 +518,10 @@ export function buildData(identity, recipientAnnounce, plaintext, ratchet = null
     ratchet = identity.private.encrypt
   }
 
-  const ephemeralKey = x25519.utils.randomPrivateKey()
+  const ephemeralKey = randomBytes(32)
   const ephemeralPub = x25519.getPublicKey(ephemeralKey)
 
-  const sharedKey = _x25519Exchange(ephemeralKey, recipientAnnounce.ratchetPub)
+  const sharedKey = _x25519Exchange(ratchet, recipientAnnounce.ratchetPub)
 
   const derivedKey = _hkdf(64, sharedKey, recipientIdentityHash, new Uint8Array(0))
   const signingKey = derivedKey.slice(0, 32)
@@ -571,12 +563,11 @@ export function buildData(identity, recipientAnnounce, plaintext, ratchet = null
 export function buildLxmfMessage(myIdentity, myDest, myRatchet, recipientAnnounce, message) {
   const recipientDest = recipientAnnounce.destinationHash
 
-  const timestamp = message.timestamp || Date.now() / 1000
+  const timestamp = message.timestamp || Math.floor(Date.now() / 1000)
   let title = message.title || new Uint8Array(0)
   if (typeof title === 'string') {
     title = new TextEncoder().encode(title)
   }
-
   let content = message.content || new Uint8Array(0)
   if (typeof content === 'string') {
     content = new TextEncoder().encode(content)
@@ -592,17 +583,15 @@ export function buildLxmfMessage(myIdentity, myDest, myRatchet, recipientAnnounc
   const payload = [timestamp, title, content, fields]
   const packedPayload = pack(payload)
 
-  const hashedPartLen = 16 + 16 + packedPayload.length
-  const hashedPart = new Uint8Array(hashedPartLen)
-  hashedPart.set(recipientDest, 0)
-  hashedPart.set(myDest, 16)
-  hashedPart.set(packedPayload, 32)
+  // Calculate hash with destination included
+  const hashedPart = concatArrays([recipientDest, myDest, packedPayload])
+  const messageHash = sha256(hashedPart)
 
-  const messageHash = _sha256(hashedPart)
-
+  // Sign: hashed_part + message_hash
   const signedPart = concatArrays([hashedPart, messageHash])
-  const signature = _ed25519Sign(signedPart, myIdentity.private.sign)
+  const signature = _ed25519Sign(signedPart, myIdentity.private.sign, myIdentity.public.sign)
 
+  // LXMF message: my_dest + signature + packed_payload
   const lxmfMessage = concatArrays([myDest, signature, packedPayload])
 
   return buildData(myIdentity, recipientAnnounce, lxmfMessage, myRatchet)
