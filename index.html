@@ -18,6 +18,9 @@
       .nowrap {
         white-space: nowrap;
       }
+      .mono {
+        font-family: monospace;
+      }
     </style>
   </head>
   <body>
@@ -32,8 +35,7 @@
         <button id="buttonSet">SET</button>
       </fieldset>
       <fieldset role="group" class="flex row" hidden>
-        <label class="nowrap">Address</label>
-        <input type="text" id="lxmfAddress" readonly />
+        <input type="text" id="lxmfAddress" readonly class="mono" />
         <button id="buttonAnnounce">ANNOUNCE</button>
       </fieldset>
       <div>
@@ -148,6 +150,7 @@
     peerList.innerHTML = ''
     Object.values(peers).forEach((announce) => {
       const li = document.createElement('li')
+      li.className = 'mono'
       li.textContent = announce.destinationHex
       peerList.appendChild(li)
     })
