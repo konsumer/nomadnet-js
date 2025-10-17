@@ -41,6 +41,8 @@ async function handleAnnounce(packet) {
     announces[Buffer.from(packet.destinationHash).toString('hex')] = announce
     announces[Buffer.from(packet.destinationHash).toString('hex')].destinationHash = packet.destinationHash
     console.log(`  Saved (${Object.keys(announces).length}) announce from ${Buffer.from(packet.destinationHash).toString('hex')}`)
+  }else {
+    console.log('  Valid: No')
   }
 }
 

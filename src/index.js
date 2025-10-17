@@ -369,8 +369,6 @@ export function announceParse(packet) {
   out.nameHash = data.slice(keysize, keysize + nameHashLen)
   out.randomHash = data.slice(keysize + nameHashLen, keysize + nameHashLen + randomHashLen)
 
-  // Mimic Python's: packet.get('context_flag', packet.get('context', 0))
-  // In Python, True == 1 evaluates to True
   let contextFlag
   if ('contextFlag' in packet && packet.contextFlag !== null && packet.contextFlag !== undefined) {
     contextFlag = packet.contextFlag ? 1 : 0
