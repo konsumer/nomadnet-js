@@ -133,10 +133,19 @@
     }
   }
 
-  const ws = new WebSocket(WS_URL)
-  ws.binaryType = 'arraybuffer'
-  ws.onmessage = (event) => handlePacket(event.data)
-  ws.onerror = console.error
+  let ws
+  function connect() {
+    ws = new WebSocket(WS_URL)
+    ws.binaryType = 'arraybuffer'
+    ws.addEventListener('message', (e) => handlePacket(e.data))
+    ws.addEventListener('error', (e) => console.error(e))
+    ws.addEventListener('close', (e) => {
+      if (ws) {
+        setTimeout(connect, 1000)
+      }
+    })
+  }
+  connect()
 
   let identity
   const messages = {}
