@@ -4,8 +4,6 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
-    <link href="https://cdn.jsdelivr.net/gh/lekoala/pop-notify/pop-notify.css" rel="stylesheet">
     <title>NomadnetJS</title>
     <style>
       .flex {
@@ -25,9 +23,9 @@
     </style>
   </head>
   <body>
-    <main id="root" class="container">
+    <main class="container">
       <h1><a href="https://github.com/konsumer/nomadnet-js" target="_new">NomadnetJS</a></h1>
-      
+
       <p>A lightweight demo client for real-time communication with Reticulum networks via WebSocket. To get started, generate a new private key or import an existing one.</p>
 
       <p>Note: This client currently stores only peer information (in your browser) messages and identity data are ephemeral. It's designed for experimenting with Reticulum protocols in a browser environment.</p>
@@ -48,145 +46,4 @@
     </main>
   </body>
 </html>
-<!-- this sets up the import-map that is needed for nomadnet-js -->
-<script type="importmap">
-  {
-    "imports": {
-      "@noble/ciphers/aes.js": "https://esm.sh/@noble/ciphers@0.5.3/aes.js",
-      "@noble/curves/utils.js": "https://esm.sh/@noble/curves@2.0.1/es2022/utils.mjs",
-      "@noble/ciphers/utils.js": "https://esm.sh/@noble/ciphers@0.5.3/webcrypto.js",
-      "@noble/hashes/sha2.js": "https://esm.sh/@noble/hashes@1.4.0/sha2.js",
-      "@noble/hashes/hmac.js": "https://esm.sh/@noble/hashes@1.4.0/hmac.js",
-      "@noble/hashes/hkdf.js": "https://esm.sh/@noble/hashes@1.4.0/hkdf.js",
-      "@noble/curves/ed25519.js": "https://esm.sh/@noble/curves@1.4.0/ed25519.js",
-      "msgpackr": "https://esm.sh/msgpackr@1.10.1",
-      "pop-notify": "https://cdn.jsdelivr.net/gh/lekoala/pop-notify@master/pop-notify.min.js",
-      "rns": "./src/index.js"
-    }
-  }
-</script>
-<script type="module">
-  import * as rns from 'rns'
-  import { bytesToHex, hexToBytes, randomBytes } from '@noble/curves/utils.js'
-  import 'pop-notify'
-
-  const WS_URL = 'wss://signal.konsumer.workers.dev/ws/reticulum'
-  const decoder = new TextDecoder()
-
-  const packetTypeNames = {}
-  packetTypeNames[rns.PACKET_DATA] = 'DATA'
-  packetTypeNames[rns.PACKET_ANNOUNCE] = 'ANNOUNCE'
-  packetTypeNames[rns.PACKET_LINKREQUEST] = 'LINKREQUEST'
-  packetTypeNames[rns.PACKET_PROOF] = 'PROOF'
-
-  // ANNOUNCE yourself
-  function announce() {
-    if (identity) {
-      console.log(`ANNOUNCE (${identity.destinationHex})`)
-      if (!ratchetPub) {
-        addRatchet()
-      }
-      ws.send(rns.buildAnnounce(identity, identity.destinationHash, 'lxmf.delivery', ratchetPub))
-    }
-  }
-
-  // add a new ratchet
-  function addRatchet() {
-    const ratchet = rns.ratchetCreateNew()
-    ratchetPub = rns.ratchetGetPublic(ratchet)
-    ratchets.push(ratchet)
-  }
-
-  // handle an incoming packet
-  function handlePacket(data) {
-    const packet = rns.decodePacket(new Uint8Array(data))
-    const destinationHex = bytesToHex(packet.destinationHash)
-    console.log(`${packetTypeNames[packet.packetType] || 'UNKNOWN'} (${destinationHex})`)
-
-    if (packet.packetType === rns.PACKET_ANNOUNCE) {
-      const announce = rns.announceParse(packet)
-      console.log(`  Valid: ${announce.valid ? 'Yes' : 'No'}`)
-      if (announce.valid) {
-        peers[destinationHex] = { ...packet, ...announce, destinationHex }
-        updatePeers()
-      }
-    }
-
-    if (packet.packetType === rns.PACKET_DATA) {
-      if (destinationHex === identity.destinationHex) {
-        const messageId = rns.getMessageId(packet)
-        console.log(`sending PROOF (${bytesToHex(messageId)})`)
-        ws.send(rns.buildProof(identity, packet, messageId))
-        const message = rns.parseLxmfMessage(rns.messageDecrypt(packet, identity, ratchets))
-        message.sourceHex = bytesToHex(message.sourceHash)
-        const title = decoder.decode(message.title)
-        const content = decoder.decode(message.content)
-
-        customElements.get("pop-notify").notifyHtml(
-          title.trim() === ''
-          ? `<strong>${message.sourceHex}</strong><br/>${content}`
-          : `<strong>${message.sourceHex}</strong><br/><strong>${title}</strong><br/>${content}`
-        )
-
-
-        console.log({ ...message, title, content, timestamp: new Date(message.timestamp * 1000) })
-      }
-    }
-
-    if (packet.packetType === rns.PACKET_PROOF) {
-    }
-  }
-
-  let ws
-  function connect() {
-    ws = new WebSocket(WS_URL)
-    ws.binaryType = 'arraybuffer'
-    ws.addEventListener('message', (e) => handlePacket(e.data))
-    ws.addEventListener('error', (e) => console.error(e))
-    ws.addEventListener('close', (e) => {
-      if (ws) {
-        setTimeout(connect, 1000)
-      }
-    })
-  }
-  connect()
-
-  let identity
-  const messages = {}
-  const ratchets = []
-  let ratchetPub
-  const peers = JSON.parse(localStorage.peers || '{}')
-  updatePeers()
-
-  function updatePeers() {
-    localStorage.peers = JSON.stringify(peers)
-    peerList.innerHTML = ''
-    Object.values(peers).forEach((announce) => {
-      const li = document.createElement('li')
-      li.className = 'mono'
-      li.textContent = announce.destinationHex
-      peerList.appendChild(li)
-    })
-  }
-
-  buttonGenerate.addEventListener('click', (e) => {
-    inputPrivateKey.value = bytesToHex(randomBytes(64))
-  })
-
-  buttonAnnounce.addEventListener('click', announce)
-
-  buttonSet.addEventListener('click', (e) => {
-    if (inputPrivateKey.value?.length !== 128 || /[^0-9a-fA-F]/.test(inputPrivateKey.value)) {
-      alert('Please enter or generate a valid private-key.')
-    } else {
-      identity = rns.getIdentityFromBytes(hexToBytes(inputPrivateKey.value))
-      identity.destinationHash = rns.getDestinationHash(identity, 'lxmf', 'delivery')
-      identity.destinationHex = bytesToHex(identity.destinationHash)
-      privkeyHolder.remove()
-      lxmfAddress.value = identity.destinationHex
-      lxmfAddress.parentElement.removeAttribute('hidden')
-      // setInterval(announce, 60000 * 60) // announce every hour
-      announce()
-    }
-  })
-</script>
+<script type="module" src="src/site.js"></script>

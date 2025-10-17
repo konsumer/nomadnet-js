@@ -5,3 +5,4 @@ storage/
 logfile
 __pycache__
 *.msgpack
+dist/

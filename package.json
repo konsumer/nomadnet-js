@@ -5,7 +5,8 @@
   "main": "src/index.js",
   "type": "module",
   "scripts": {
-    "start": "npx -y http-server"
+    "start": "vite",
+    "build": "vite build --base ./"
   },
   "keywords": [
     "nomadnet",
@@ -25,6 +26,9 @@
     "msgpackr": "^1.11.5"
   },
   "devDependencies": {
+    "@picocss/pico": "^2.1.1",
+    "pop-notify": "^1.2.1",
+    "vite": "^7.1.10",
     "ws": "^8.18.3"
   }
 }

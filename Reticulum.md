@@ -221,4 +221,4 @@ Commonly, APP_DATA is a msgpack array, here it is:
 ;[[65, 110, 111, 110, 121, 109, 111, 117, 115, 32, 80, 101, 101, 114], null]
 ```
 
-The first element is UTF8 encoded bytes (not msgepack string): `Anonymous Peer`, which is the name. Other clients put additional stuff in here, like meshchat includes icons (emojis).
+The first element is UTF8 encoded bytes (not msgpack string): `Anonymous Peer`, which is the name. Other clients put additional stuff in here, like meshchat includes icons (emojis).
