@@ -257,31 +257,17 @@ export function getDestinationHash(identity, appName, ...aspects) {
 
 // Message functions
 export function getMessageId(packet) {
-  if (!packet.raw || packet.raw.length < 2) {
-    throw new Error('Invalid packet for message ID calculation')
-  }
-
-  const modifiedHeader = new Uint8Array([packet.raw[0] & 0b00001111])
   const headerType = (packet.raw[0] >> 6) & 0b11
-  const contextFlag = Boolean(packet.raw[0] & 0b00100000)
+  const hashablePart = new Uint8Array(packet.raw.length - (headerType === 1 ? 18 : 2) + 1)
+  hashablePart[0] = packet.raw[0] & 0b00001111
 
-  let offset = 2 // Header + hops
-
-  // Add destination hash(es)
   if (headerType === 1) {
-    offset += 32 // source (16) + dest (16)
+    hashablePart.set(packet.raw.slice(18), 1)
   } else {
-    offset += 16 // just dest
+    hashablePart.set(packet.raw.slice(2), 1)
   }
 
-  // Add context byte ONLY if contextFlag is set
-  if (contextFlag) {
-    offset += 1
-  }
-
-  const data = packet.raw.slice(offset)
-  const combined = concatArrays([modifiedHeader, data])
-  return _sha256(combined)
+  return _sha256(hashablePart)
 }
 
 // ============================================================================
@@ -481,15 +467,8 @@ export function buildProof(identity, packet, messageId = null) {
     messageId = getMessageId(packet)
   }
 
-  // Add debug
-  console.log(`\n=== buildProof ===`)
-  console.log(`  Message ID (32 bytes): ${bytesToHex(messageId)}`)
-  console.log(`  Signing with private key: ${bytesToHex(identity.private.sign).slice(0, 32)}...`)
-
   // Sign the full message ID
   const signature = _ed25519Sign(messageId, identity.private.sign)
-
-  console.log(`  Signature: ${bytesToHex(signature)}`)
 
   // Proof packet data: version byte + signature
   const proofData = new Uint8Array([0x00, ...signature])
