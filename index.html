@@ -21,6 +21,7 @@
       <fieldset role="group" id="privkeyHolder">
         <input placeholder="PRIVATE KEY" id="inputPrivateKey" type="password" />
         <button id="buttonGenerate" class="secondary">GENERATE</button>
+        <button id="buttonCopy" class="contrast hidden">COPY</button>
         <button id="buttonSet">SET</button>
       </fieldset>
       <fieldset role="group" hidden>
@@ -32,6 +33,22 @@
         <ul id="peerList"></ul>
       </div>
     </main>
+    <dialog id="dialogPopupMessage">
+      <article>
+        <header>
+          <button class="closeDialogPopupMessage" aria-label="Close" rel="prev"></button>
+          <strong>Send message</strong>
+        </header>
+        <p>
+          <input type="text" name="address" placeholder="address" id="inputSendAddress" />
+          <textarea id="inputSendBody" name="message" placeholder="Your message"></textarea>
+        </p>
+        <footer>
+          <button class="closeDialogPopupMessage secondary">Cancel</button>
+          <button id="buttonSendMessage">Send</button>
+        </footer>
+      </article>
+    </dialog>
   </body>
 </html>
 <script type="module" src="src/site.js"></script>

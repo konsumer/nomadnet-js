@@ -1,0 +1,42 @@
+/* minimal site-style */
+
+/* I may eventually use tailwind/daisyui, but this is a nice & small set */
+
+@import 'pop-notify/pop-notify.css';
+@import '@picocss/pico';
+
+.mono {
+  font-family: monospace;
+}
+
+.flex {
+  display: flex;
+}
+
+.ycenter {
+  align-items: center;
+}
+
+.ycenter {
+  justify-content: center;
+}
+
+.gap {
+  gap: 0.4em;
+}
+
+.row {
+  flex-direction: row;
+}
+
+.col {
+  flex-direction: column;
+}
+
+.pointer {
+  cursor: pointer;
+}
+
+.hidden {
+  display: none;
+}
