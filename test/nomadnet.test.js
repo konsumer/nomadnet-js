@@ -1,7 +1,6 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert'
 
-// Import your functions (adjust path as needed)
 import { identityCreate, getDestinationHash, ratchetCreateNew, ratchetGetPublic, encodePacket, decodePacket, buildAnnounce, announceParse, buildProof, proofValidate, buildData, messageDecrypt, getMessageId } from '../src/index.js'
 
 describe('Packet Encoding/Decoding', () => {
@@ -52,7 +51,7 @@ describe('Packet Encoding/Decoding', () => {
 
     assert.deepEqual(decoded.destinationHash, destHash)
     assert.deepEqual(decoded.sourceHash, sourceHash)
-    assert.equal(decoded.headerType, true)
+    assert.ok(decoded.headerType)
     assert.equal(decoded.context, 1)
     assert.equal(decoded.hops, 2)
   })
@@ -111,7 +110,7 @@ describe('Announce', () => {
 
     const announce = announceParse(packet)
 
-    assert.equal(announce.valid, true)
+    assert.ok(announce.valid)
     assert.deepEqual(announce.keyPubEncrypt, identity.public.encrypt)
     assert.deepEqual(announce.keyPubSignature, identity.public.sign)
     assert.deepEqual(announce.destinationHash, destination)
@@ -126,7 +125,7 @@ describe('Announce', () => {
     const packet = decodePacket(announceBytes)
     const announce = announceParse(packet)
 
-    assert.equal(announce.valid, true)
+    assert.ok(announce.valid)
     assert.deepEqual(announce.appData, appData)
   })
 
@@ -192,7 +191,7 @@ describe('Proof', () => {
     const proofPacket = decodePacket(proofBytes)
 
     const isValid = proofValidate(proofPacket, identity, messageId)
-    assert.equal(isValid, true)
+    assert.ok(isValid)
   })
 
   test('proofValidate rejects wrong identity', () => {
@@ -355,7 +354,7 @@ describe('End-to-End', () => {
     const bobAnnounceBytes = buildAnnounce(bob, bobDest, 'lxmf.delivery')
     const bobAnnouncePacket = decodePacket(bobAnnounceBytes)
     const bobAnnounce = announceParse(bobAnnouncePacket)
-    assert.equal(bobAnnounce.valid, true)
+    assert.ok(bobAnnounce.valid)
 
     // Alice sends data to Bob
     const message = new TextEncoder().encode('Hello Bob!')
@@ -373,6 +372,6 @@ describe('End-to-End', () => {
 
     // Alice validates proof
     const isValid = proofValidate(proofPacket, bob, messageId)
-    assert.equal(isValid, true)
+    assert.ok(isValid)
   })
 })

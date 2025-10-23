@@ -465,11 +465,17 @@ export function buildProof(identity, packet, messageId = null) {
 }
 
 export function proofValidate(packet, identity, fullPacketHash) {
-  if (packet.data.length < 65) return false
-
-  // Skip version byte, signature is bytes 1-65
-  const signature = packet.data.slice(1, 65)
-  return _ed25519Validate(identity.public.sign, signature, fullPacketHash)
+  if (packet.data.length === 64) {
+    // Old format: no version byte, just 64-byte signature
+    const signature = packet.data
+    return _ed25519Validate(identity.public.sign, signature, fullPacketHash)
+  } else if (packet.data.length === 65) {
+    // New format: version byte + 64-byte signature
+    const signature = packet.data.slice(1, 65)
+    return _ed25519Validate(identity.public.sign, signature, fullPacketHash)
+  } else {
+    return false
+  }
 }
 
 // ============================================================================

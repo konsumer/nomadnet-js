@@ -1,0 +1,152 @@
+// this tests real packets/identity from official clients
+
+import { describe, test } from 'node:test'
+import assert from 'node:assert'
+import { hexToBytes, bytesToHex } from '@noble/curves/utils.js'
+
+import { getDestinationHash, getIdentityFromBytes, ratchetGetPublic, decodePacket, announceParse, proofValidate, messageDecrypt, getMessageId, PACKET_DATA, PACKET_ANNOUNCE, PACKET_PROOF } from '../src/index.js'
+
+export const keys = {
+  '072ec44973a8dee8e28d230fb4af8fe4': hexToBytes('205131cb9672eaec8a582e8e018307f2428c4aac5e383f12e94939e672b931677763c7398d0b9cb6ef1369d023d8af10b85d80f6579c55a6f528953265c15313'),
+  '76a93cda889a8c0a88451e02d53fd8b9': hexToBytes('e8c5c096166f3554868de9133b0c55c7abf0318230860a142ea3f84a0aae7759142f6c0b84d9f537ceb2e8e9678fc9fb77caf91e2176278fb4c4f5c3eb7b48cd')
+}
+
+export const ratchets = [hexToBytes('205cb256c44d4d3939bdc02e2a9667de4214cbcc651bbdc0a318acf7ec68b066'), hexToBytes('28dd4da561a9bc0cb7d644a4487c01cbe32b01718a21f18905f5611b110a5c45')]
+
+export const packets = `
+ANNOUNCE (072ec44973a8dee8e28d230fb4af8fe4):  2100072ec44973a8dee8e28d230fb4af8fe400a2b9b02fb4749fcf8458762d1be0ae67ff1caa47fb0a52f4c2bd6dd07860a738da50a87f884e6e64aaa70b44d20868144e3e26ffa001c60a7c797dbae5078ece6ec60bc318e2c0f0d90873408275530068de1039e2bb21108b2cbc900b476290ab7867441446db366a70fb8ed1448ca0e889bd65bad6d8654e72661ddc089b06495ab91a57afc5700e095f021aa8cec04f22ba55438efc3ab1e2a91b8d17bd259313f175dff040827fdf1111c88bef501676380b92c40e416e6f6e796d6f75732050656572c0
+ANNOUNCE (76a93cda889a8c0a88451e02d53fd8b9):  210076a93cda889a8c0a88451e02d53fd8b90071f199f04d3589ca083c66ff91baed628ee19517ef68eb209827df3a6785cf5b0af43fb0e168176370828fcdc199e5ae2b208b57cf65179ffa8f25733d9d40bc6ec60bc318e2c0f0d908149ad525040068de103b0df6d220011ce9da7559fbd620380501d9e19afce87a6d0c661412f3831cc915dbecabe89ef5a11a359d3757a85280c3ae68a8b6366ed4110be24a408dbe946b2815e0e89f8e49848978122b30e442af83b36cef11d3df69c34189156858560292c40e416e6f6e796d6f75732050656572c0
+DATA (76a93cda889a8c0a88451e02d53fd8b9):  000076a93cda889a8c0a88451e02d53fd8b900f549cccf8d574cb520c8f12ea6ea67c4f4ce34f301de611cd942acbfb6933f3f7a025d5b6d6184d04dd0279b8037f1c9c1c1c25defbdd5e62aa8fb04502101014a501b9235e62f823bbdfd4d85e7656d765802f115a01b57b823ae02cc94899ae3a0f94bf7c32f1a73c027e5c95e0dd94c72c833ea75951af517da665eff26bca45e90e2eaa18775e65799ea0b3a977645107850dbfe62bb1f3228b50ac6e775006c4f18d6f3a1474233dc9b13cd95f6a6f581ad0b85de7196ea606d393d35f1
+PROOF (2831d76f1a8035638505c132fe5818c1):  03002831d76f1a8035638505c132fe5818c100b90b83a04be319463f930b123b667eaaf64a85e827c34831a032cf72834a1dc58836e1fe4c49e30decab52747da2811db83a4b0b8464aa31e02f2eebbf1dae03
+DATA (072ec44973a8dee8e28d230fb4af8fe4):  0000072ec44973a8dee8e28d230fb4af8fe400b2191b23b7506a3325fe288d75a7ab06700f92c710c16a7f55769afb014d753b8cf3187730116905843fb0de9dcec976b121a6425b995f80442819ebe883dab5aa72fb8a9d96849969b073b8e76e4463dc8c0eceba936665c4b62af1c31de32ba3433b6d5bf9ceaf4e08355126af0ef6dd111bdeeefa49434c69aba42160ec3e3698c2a88d96ef940b636dff89f2dbde337ae0fc7cd802de72793458dc3a1966fb0ed28e513dfc77138d53f87875a97a22e11e58191d5ae863de24ff68a3e961
+PROOF (d7c0e833f0cbde9f9133cd9e7d508b1a):  0300d7c0e833f0cbde9f9133cd9e7d508b1a00cd00ce237471609d6ef64e427151fed46d9eb71fe6337f6fc530a9f3a55c730f1fd09f82f7d12d1caadbc185b7703f0d9f5db6c792c2dfcdf1eed3111088860c
+`
+  .split('\n')
+  .filter((l) => l.trim())
+  .map((l) => hexToBytes(l.split(':  ').pop()))
+
+// problematic ANNOUNCE packets from other networks
+packets.push(hexToBytes('01007d62e355cc90ec4e79569d33a8ad6c6b00b05e9bd83282a538be44ec872286cec32de7a8335e29c72fe8e8463ca135565b3a5580d45637aeaf037fe5f608b702a3ca85efcf231c68fbfd852706ac320695e03a09b77ac21b22258e299132c47b0068f2b1de03faecd1a563d18584e2f2b4a4434bd3e9a3fb943fa035cc2205b6f779de118908b7cad82cd4830d3a70ba7c8749af77dafbb6feb4023f988cae05b7ae83210894c2ce68f2b1decb4070000000000000c0'))
+packets.push(hexToBytes('71014acdf8ba30fbafe1cddf04857b86422aacd4eef4901f2b7c69e761dc8781ed4c001832c9c605a6806c6d00a691a80acea4f22269e4b2cfdae1ef66f4a2c75edb2a2ec0c6d29518b7f80c7b9b4ff47eb19c51585dd7154adc5869659665519b72916ec60bc318e2c0f0d90830015a7288f64c8ec70d8784690c0b19cf62cda4a679d738b3905b490163b0b7fb0e9cae68790126071531a43e557b5d0d6c6476914c0535e602ce20cc77b727bd03270a8e84b1111030dff13d40d6c929561b1729d4e5fb2130d4f7d35ee3f1b116122bdb0a656f4308'))
+
+// Track DATA packets for lookup in PROOF
+// Normally this would happen when you send a message, but I do it in my DATA tests
+const sentPackets = {}
+
+// Build recipients & lookup table
+// Put the addresses in easier-to-use shape
+const recipients = {}
+
+describe('Identity', () => {
+  test('Client A: 072ec44973a8dee8e28d230fb4af8fe4', () => {
+    const clientA = getIdentityFromBytes(keys['072ec44973a8dee8e28d230fb4af8fe4'])
+    const clientA_addr = getDestinationHash(clientA, 'lxmf.delivery')
+    assert.equal(bytesToHex(clientA_addr), '072ec44973a8dee8e28d230fb4af8fe4')
+    recipients['072ec44973a8dee8e28d230fb4af8fe4'] = clientA
+  })
+
+  test('Client B: 76a93cda889a8c0a88451e02d53fd8b9', () => {
+    const clientA = getIdentityFromBytes(keys['76a93cda889a8c0a88451e02d53fd8b9'])
+    const clientA_addr = getDestinationHash(clientA, 'lxmf.delivery')
+    assert.equal(bytesToHex(clientA_addr), '76a93cda889a8c0a88451e02d53fd8b9')
+    recipients['76a93cda889a8c0a88451e02d53fd8b9'] = clientA
+  })
+})
+
+describe('ANNOUNCE', () => {
+  test('072ec44973a8dee8e28d230fb4af8fe4', () => {
+    const packet = decodePacket(packets[0])
+    assert.equal(packet.packetType, PACKET_ANNOUNCE)
+    assert.equal(bytesToHex(packet.destinationHash), '072ec44973a8dee8e28d230fb4af8fe4')
+    const announce = announceParse(packet)
+    assert.ok(announce.valid)
+  })
+
+  test('76a93cda889a8c0a88451e02d53fd8b9', () => {
+    const packet = decodePacket(packets[1])
+    assert.equal(packet.packetType, PACKET_ANNOUNCE)
+    assert.equal(bytesToHex(packet.destinationHash), '76a93cda889a8c0a88451e02d53fd8b9')
+    const announce = announceParse(packet)
+    assert.ok(announce.valid)
+  })
+
+  // these were problematc in some clients (from other networks)
+
+  test('7d62e355cc90ec4e79569d33a8ad6c6b', () => {
+    const packet = decodePacket(packets[6])
+    assert.equal(packet.packetType, PACKET_ANNOUNCE)
+    assert.equal(bytesToHex(packet.destinationHash), '7d62e355cc90ec4e79569d33a8ad6c6b')
+    const announce = announceParse(packet)
+    assert.ok(announce.valid)
+  })
+
+  test('acd4eef4901f2b7c69e761dc8781ed4c', () => {
+    const packet = decodePacket(packets[7])
+    assert.equal(packet.packetType, PACKET_ANNOUNCE)
+    assert.equal(bytesToHex(packet.destinationHash), 'acd4eef4901f2b7c69e761dc8781ed4c')
+    const announce = announceParse(packet)
+    assert.ok(announce.valid)
+  })
+})
+
+describe('DATA', () => {
+  test('2831d76f1a8035638505c132fe5818c1 (A -> B)', () => {
+    const packet = decodePacket(packets[2])
+    assert.equal(packet.packetType, PACKET_DATA)
+    assert.equal(bytesToHex(packet.destinationHash), '76a93cda889a8c0a88451e02d53fd8b9')
+    const packetHashFull = getMessageId(packet) // 32-byte for validation
+    assert.equal(bytesToHex(packetHashFull), '2831d76f1a8035638505c132fe5818c1d1d25869a973d35c197d669f0d5074d8')
+
+    // save for PROOF validation
+    sentPackets[bytesToHex(packetHashFull.slice(0, 16))] = { recipientHash: packet.destinationHash, packetHashFull }
+  })
+
+  test('d7c0e833f0cbde9f9133cd9e7d508b1a (B -> A)', () => {
+    const packet = decodePacket(packets[4])
+    assert.equal(packet.packetType, PACKET_DATA)
+    assert.equal(bytesToHex(packet.destinationHash), '072ec44973a8dee8e28d230fb4af8fe4')
+    const packetHashFull = getMessageId(packet) // 32-byte for validation
+    assert.equal(bytesToHex(packetHashFull), 'd7c0e833f0cbde9f9133cd9e7d508b1a61d2c89410e9009e4474b9212ed0370a')
+
+    // save for PROOF validation
+    sentPackets[bytesToHex(packetHashFull.slice(0, 16))] = { recipientHash: packet.destinationHash, packetHashFull }
+  })
+})
+
+describe('PROOF', () => {
+  test('2831d76f1a8035638505c132fe5818c1 (A -> B)', () => {
+    const packet = decodePacket(packets[3])
+    assert.equal(packet.packetType, PACKET_PROOF)
+    assert.equal(bytesToHex(packet.destinationHash), '2831d76f1a8035638505c132fe5818c1')
+
+    // lookup DATA packet that we "sent" for recipient & full-hash (only we know that, because we sent it)
+    const { recipientHash, packetHashFull } = sentPackets[bytesToHex(packet.destinationHash)]
+    assert.equal(bytesToHex(packetHashFull), '2831d76f1a8035638505c132fe5818c1d1d25869a973d35c197d669f0d5074d8')
+
+    // it's to Client B
+    assert.equal(bytesToHex(recipientHash), '76a93cda889a8c0a88451e02d53fd8b9')
+    const identity = recipients['76a93cda889a8c0a88451e02d53fd8b9']
+    assert.ok(identity)
+
+    const valid = proofValidate(packet, identity, packetHashFull)
+    assert.ok(valid)
+  })
+
+  test('d7c0e833f0cbde9f9133cd9e7d508b1a (B -> A)', () => {
+    const packet = decodePacket(packets[5])
+    assert.equal(packet.packetType, PACKET_PROOF)
+    assert.equal(bytesToHex(packet.destinationHash), 'd7c0e833f0cbde9f9133cd9e7d508b1a')
+
+    // lookup DATA packet that we "sent" for recipient & full-hash (only we know that, because we sent it)
+    const { recipientHash, packetHashFull } = sentPackets[bytesToHex(packet.destinationHash)]
+    assert.equal(bytesToHex(packetHashFull), 'd7c0e833f0cbde9f9133cd9e7d508b1a61d2c89410e9009e4474b9212ed0370a')
+
+    // it's to Client A
+    assert.equal(bytesToHex(recipientHash), '072ec44973a8dee8e28d230fb4af8fe4')
+    const identity = recipients['072ec44973a8dee8e28d230fb4af8fe4']
+    assert.ok(identity)
+
+    const valid = proofValidate(packet, identity, packetHashFull)
+    assert.ok(valid)
+  })
+})
