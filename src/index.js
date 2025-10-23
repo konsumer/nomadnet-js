@@ -115,6 +115,34 @@ function _pkcs7Pad(data, bs = 16) {
   return result
 }
 
+function _pkcs7Unpad(data, blockSize = 16) {
+  if (!data || data.length === 0) {
+    throw new Error('Cannot unpad empty data')
+  }
+
+  if (data.length % blockSize !== 0) {
+    throw new Error('Padded data length must be a multiple of block size')
+  }
+
+  // Get the padding value from the last byte
+  const paddingValue = data[data.length - 1]
+
+  // Validate padding value
+  if (paddingValue === 0 || paddingValue > blockSize) {
+    throw new Error('Invalid PKCS#7 padding value')
+  }
+
+  // Verify all padding bytes are correct
+  for (let i = data.length - paddingValue; i < data.length; i++) {
+    if (data[i] !== paddingValue) {
+      throw new Error('Invalid PKCS#7 padding')
+    }
+  }
+
+  // Return data without padding
+  return data.slice(0, data.length - paddingValue)
+}
+
 function _aesCbcEncrypt(key, iv, plaintext) {
   const cipher = cbc(key, iv)
   return cipher.encrypt(plaintext)
@@ -490,18 +518,13 @@ export function buildData(identity, recipientAnnounce, plaintext) {
 
 function tryDecrypt(ephemeralPub, ciphertext, privateKey, identityHash) {
   try {
-    console.log('  trying with key:', Buffer.from(privateKey).toString('hex').slice(0, 16))
-
     const sharedKey = _x25519Exchange(privateKey, ephemeralPub)
-    console.log('  shared:', Buffer.from(sharedKey).toString('hex').slice(0, 16))
 
     const derivedKey = _hkdf(64, sharedKey, identityHash, new Uint8Array(0))
     const signingKey = derivedKey.slice(0, 32)
     const encryptionKey = derivedKey.slice(32, 64)
-    console.log('  encKey:', Buffer.from(encryptionKey).toString('hex').slice(0, 16))
 
     if (ciphertext.length < 48) {
-      console.log('  too short')
       return null
     }
 
@@ -509,19 +532,15 @@ function tryDecrypt(ephemeralPub, ciphertext, privateKey, identityHash) {
     const signedData = ciphertext.slice(0, -32)
     const expectedHmac = _hmacSha256(signingKey, signedData)
 
-    console.log('  hmac match:', arraysEqual(receivedHmac, expectedHmac))
     if (!arraysEqual(receivedHmac, expectedHmac)) return null
 
     const iv = signedData.slice(0, 16)
     const actualCiphertext = signedData.slice(16)
     const paddedPlaintext = _aesCbcDecrypt(encryptionKey, iv, actualCiphertext)
-    console.log('  decrypted padded length:', paddedPlaintext.length)
 
     const result = _pkcs7Unpad(paddedPlaintext)
-    console.log('  unpadded length:', result ? result.length : 'failed')
     return result
   } catch (e) {
-    console.log('  error:', e.message)
     return null
   }
 }
@@ -537,10 +556,6 @@ export function messageDecrypt(packet, identity, ratchets = null) {
   // Extract components
   const ephemeralPub = data.slice(0, 32)
   const ciphertext = data.slice(32)
-
-  console.log('data length:', data.length)
-  console.log('ephemeralPub:', Buffer.from(ephemeralPub).toString('hex'))
-  console.log('trying decrypt...')
 
   // Try decryption with ratchets first
   if (ratchets && Array.isArray(ratchets)) {

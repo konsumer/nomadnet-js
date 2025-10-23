@@ -109,13 +109,7 @@ describe('Announce', () => {
     const announceBytes = buildAnnounce(identity, destination, 'lxmf.delivery')
     const packet = decodePacket(announceBytes)
 
-    console.log('contextFlag:', packet.contextFlag)
-    console.log('context:', packet.context)
-
     const announce = announceParse(packet)
-
-    console.log('valid:', announce.valid)
-    console.log('keyPubEncrypt match:', Buffer.from(announce.keyPubEncrypt).equals(Buffer.from(identity.public.encrypt)))
 
     assert.equal(announce.valid, true)
     assert.deepEqual(announce.keyPubEncrypt, identity.public.encrypt)
