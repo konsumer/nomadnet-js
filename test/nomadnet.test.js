@@ -1,12 +1,16 @@
+// this tests basic functionality of every function
+
 import { describe, test } from 'node:test'
 import assert from 'node:assert'
 
-import { identityCreate, getDestinationHash, ratchetCreateNew, ratchetGetPublic, encodePacket, decodePacket, buildAnnounce, announceParse, buildProof, proofValidate, buildData, messageDecrypt, getMessageId } from '../src/index.js'
+import { identityCreate, getDestinationHash, ratchetCreateNew, ratchetGetPublic, encodePacket, buildMessage, decodePacket, decodeMessage, buildAnnounce, announceParse, buildProof, proofValidate, buildData, messageDecrypt, getMessageId } from '../src/index.js'
+
+const encoder = new TextEncoder()
 
 describe('Packet Encoding/Decoding', () => {
   test('encodePacket and decodePacket - single header', () => {
     const destHash = new Uint8Array(16).fill(0xaa)
-    const data = new TextEncoder().encode('hello')
+    const data = encoder.encode('hello')
 
     const packet = {
       destinationHash: destHash,
@@ -32,7 +36,7 @@ describe('Packet Encoding/Decoding', () => {
   test('encodePacket and decodePacket - double header', () => {
     const destHash = new Uint8Array(16).fill(0xaa)
     const sourceHash = new Uint8Array(16).fill(0xbb)
-    const data = new TextEncoder().encode('test')
+    const data = encoder.encode('test')
 
     const packet = {
       destinationHash: destHash,
@@ -119,7 +123,7 @@ describe('Announce', () => {
   test('buildAnnounce with app data', () => {
     const identity = identityCreate()
     const destination = getDestinationHash(identity, 'lxmf.delivery')
-    const appData = new TextEncoder().encode('test data')
+    const appData = encoder.encode('test data')
 
     const announceBytes = buildAnnounce(identity, destination, 'lxmf.delivery', null, appData)
     const packet = decodePacket(announceBytes)
@@ -157,7 +161,7 @@ describe('Proof', () => {
       hops: 0,
       context: 0,
       contextFlag: false,
-      data: new TextEncoder().encode('test')
+      data: encoder.encode('test')
     }
     const dataBytes = encodePacket(dataPacket)
     const dataParsed = decodePacket(dataBytes)
@@ -181,7 +185,7 @@ describe('Proof', () => {
       hops: 0,
       context: 0,
       contextFlag: false,
-      data: new TextEncoder().encode('test')
+      data: encoder.encode('test')
     }
     const dataBytes = encodePacket(dataPacket)
     const dataParsed = decodePacket(dataBytes)
@@ -206,7 +210,7 @@ describe('Proof', () => {
       hops: 0,
       context: 0,
       contextFlag: false,
-      data: new TextEncoder().encode('test')
+      data: encoder.encode('test')
     }
     const dataBytes = encodePacket(dataPacket)
     const dataParsed = decodePacket(dataBytes)
@@ -231,7 +235,7 @@ describe('Data Encryption/Decryption', () => {
     const announcePacket = decodePacket(announceBytes)
     const recipientAnnounce = announceParse(announcePacket)
 
-    const plaintext = new TextEncoder().encode('Hello, World!')
+    const plaintext = encoder.encode('Hello, World!')
     const dataBytes = buildData(sender, recipientAnnounce, plaintext)
     const dataPacket = decodePacket(dataBytes)
 
@@ -251,7 +255,7 @@ describe('Data Encryption/Decryption', () => {
     const announcePacket = decodePacket(announceBytes)
     const recipientAnnounce = announceParse(announcePacket)
 
-    const plaintext = new TextEncoder().encode('Secret message')
+    const plaintext = encoder.encode('Secret message')
     const dataBytes = buildData(sender, recipientAnnounce, plaintext)
     const dataPacket = decodePacket(dataBytes)
 
@@ -270,7 +274,7 @@ describe('Data Encryption/Decryption', () => {
     const announcePacket = decodePacket(announceBytes)
     const recipientAnnounce = announceParse(announcePacket)
 
-    const plaintext = new TextEncoder().encode('Secret')
+    const plaintext = encoder.encode('Secret')
     const dataBytes = buildData(sender, recipientAnnounce, plaintext)
     const dataPacket = decodePacket(dataBytes)
 
@@ -287,7 +291,7 @@ describe('Data Encryption/Decryption', () => {
     const announcePacket = decodePacket(announceBytes)
     const recipientAnnounce = announceParse(announcePacket)
 
-    const plaintext = new TextEncoder().encode('Test')
+    const plaintext = encoder.encode('Test')
     const dataBytes = buildData(sender, recipientAnnounce, plaintext)
     const dataPacket = decodePacket(dataBytes)
 
@@ -311,7 +315,7 @@ describe('Message ID', () => {
       hops: 0,
       context: 0,
       contextFlag: false,
-      data: new TextEncoder().encode('test')
+      data: encoder.encode('test')
     }
     const packetBytes = encodePacket(packet)
     const parsed = decodePacket(packetBytes)
@@ -331,7 +335,7 @@ describe('Message ID', () => {
       hops: 0,
       context: 0,
       contextFlag: false,
-      data: new TextEncoder().encode('test')
+      data: encoder.encode('test')
     }
     const packetBytes = encodePacket(packet)
     const parsed = decodePacket(packetBytes)
@@ -339,6 +343,28 @@ describe('Message ID', () => {
     const id1 = getMessageId(parsed)
     const id2 = getMessageId(parsed)
     assert.deepEqual(id1, id2)
+  })
+})
+
+describe('LXMF higher-level DATA functions', () => {
+  test('create a LXMF packet', () => {
+    const senderIdentity = identityCreate()
+    const senderDest = getDestinationHash(senderIdentity, 'lxmf.delivery')
+
+    const recipientIdentity = identityCreate()
+    const recipientDest = getDestinationHash(recipientIdentity, 'lxmf.delivery')
+    const recipientAnnounce = announceParse(decodePacket(buildAnnounce(recipientIdentity, recipientDest, 'lxmf.delivery')))
+
+    const messageIn = buildMessage(senderIdentity, senderDest, recipientAnnounce, {
+      content: 'Hello world'
+    })
+    assert.ok(messageIn.length)
+
+    const packet = decodePacket(messageIn)
+    const messageOut = decodeMessage(messageDecrypt(packet, recipientIdentity))
+    assert.deepEqual(senderDest, messageOut.senderHash)
+    assert.equal(messageOut.title, '')
+    assert.equal(messageOut.content, 'Hello world')
   })
 })
 
@@ -357,7 +383,7 @@ describe('End-to-End', () => {
     assert.ok(bobAnnounce.valid)
 
     // Alice sends data to Bob
-    const message = new TextEncoder().encode('Hello Bob!')
+    const message = encoder.encode('Hello Bob!')
     const dataBytes = buildData(alice, bobAnnounce, message)
     const dataPacket = decodePacket(dataBytes)
 

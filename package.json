@@ -23,13 +23,13 @@
   "dependencies": {
     "@noble/ciphers": "^2.0.1",
     "@noble/curves": "^2.0.0",
-    "@noble/hashes": "^2.0.1"
+    "@noble/hashes": "^2.0.1",
+    "msgpackr": "^1.11.5"
   },
   "devDependencies": {
     "@picocss/pico": "^2.1.1",
     "pop-notify": "^1.2.1",
     "vite": "^7.1.10",
-    "ws": "^8.18.3",
-    "msgpackr": "^1.11.5"
+    "ws": "^8.18.3"
   }
 }

@@ -9,6 +9,7 @@ import { hmac } from '@noble/hashes/hmac.js'
 import { hkdf } from '@noble/hashes/hkdf.js'
 import { ed25519 } from '@noble/curves/ed25519.js'
 import { x25519 } from '@noble/curves/ed25519.js'
+import { unpack, pack } from 'msgpackr'
 
 import { hexToBytes, bytesToHex } from '@noble/curves/utils.js'
 
@@ -51,6 +52,9 @@ export const DEST_LINK = 0x03
 export const TRANSPORT_BROADCAST = 0
 export const TRANSPORT_TRANSPORT = 1
 
+const encoder = new TextEncoder()
+const decoder = new TextDecoder()
+
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
@@ -79,7 +83,7 @@ function _hmacSha256(key, data) {
   return hmac(sha256, key, data)
 }
 
-function _sha256(data) {
+export function _sha256(data) {
   return sha256(data)
 }
 
@@ -242,7 +246,7 @@ export function getDestinationHash(identity, appName, ...aspects) {
     fullName += '.' + aspect
   }
 
-  const nameHash = _sha256(new TextEncoder().encode(fullName)).slice(0, 10)
+  const nameHash = _sha256(encoder.encode(fullName)).slice(0, 10)
 
   const addrHashMaterial = new Uint8Array(26)
   addrHashMaterial.set(nameHash)
@@ -253,17 +257,31 @@ export function getDestinationHash(identity, appName, ...aspects) {
 
 // Message functions
 export function getMessageId(packet) {
-  const headerType = (packet.raw[0] >> 6) & 0b11
-  const hashablePart = new Uint8Array(packet.raw.length - (headerType === 1 ? 18 : 2) + 1)
-  hashablePart[0] = packet.raw[0] & 0b00001111
-
-  if (headerType === 1) {
-    hashablePart.set(packet.raw.slice(18), 1)
-  } else {
-    hashablePart.set(packet.raw.slice(2), 1)
+  if (!packet.raw || packet.raw.length < 2) {
+    throw new Error('Invalid packet for message ID calculation')
   }
 
-  return _sha256(hashablePart)
+  const modifiedHeader = new Uint8Array([packet.raw[0] & 0b00001111])
+  const headerType = (packet.raw[0] >> 6) & 0b11
+  const contextFlag = Boolean(packet.raw[0] & 0b00100000)
+
+  let offset = 2 // Header + hops
+
+  // Add destination hash(es)
+  if (headerType === 1) {
+    offset += 32 // source (16) + dest (16)
+  } else {
+    offset += 16 // just dest
+  }
+
+  // Add context byte ONLY if contextFlag is set
+  if (contextFlag) {
+    offset += 1
+  }
+
+  const data = packet.raw.slice(offset)
+  const combined = concatArrays([modifiedHeader, data])
+  return _sha256(combined)
 }
 
 // ============================================================================
@@ -352,7 +370,7 @@ export function decodePacket(packetBytes) {
 // ============================================================================
 
 export function buildAnnounce(identity, destination, fullName = 'lxmf.delivery', ratchetPub = null, appData = null) {
-  const nameHash = _sha256(new TextEncoder().encode(fullName)).slice(0, 10)
+  const nameHash = _sha256(encoder.encode(fullName)).slice(0, 10)
   const randomHash = randomBytes(10)
 
   // Determine effective ratchet and context
@@ -372,7 +390,7 @@ export function buildAnnounce(identity, destination, fullName = 'lxmf.delivery',
   // Prepare app data
   let appDataBytes = new Uint8Array(0)
   if (appData) {
-    appDataBytes = typeof appData === 'string' ? new TextEncoder().encode(appData) : appData
+    appDataBytes = typeof appData === 'string' ? encoder.encode(appData) : appData
   }
 
   // Build signed data
@@ -463,11 +481,18 @@ export function buildProof(identity, packet, messageId = null) {
     messageId = getMessageId(packet)
   }
 
+  // Add debug
+  console.log(`\n=== buildProof ===`)
+  console.log(`  Message ID (32 bytes): ${bytesToHex(messageId)}`)
+  console.log(`  Signing with private key: ${bytesToHex(identity.private.sign).slice(0, 32)}...`)
+
   // Sign the full message ID
   const signature = _ed25519Sign(messageId, identity.private.sign)
 
+  console.log(`  Signature: ${bytesToHex(signature)}`)
+
   // Proof packet data: version byte + signature
-  const proofData = concatArrays([new Uint8Array([0x00]), signature])
+  const proofData = new Uint8Array([0x00, ...signature])
 
   return encodePacket({
     destinationHash: messageId.slice(0, 16),
@@ -587,4 +612,39 @@ function tryDecrypt(ephemeralPub, ciphertext, privateKey, identityHash) {
   } catch (e) {
     return null
   }
+}
+
+// ============================================================================
+// LXMF higher-level DATA functions
+// ============================================================================
+
+export function decodeMessage(plaintext) {
+  const [ts, title, content, fields] = unpack(plaintext.slice(80))
+  const senderHash = plaintext.slice(0, 16)
+  const signature = plaintext.slice(16, 80)
+  return { senderHash, signature, title: decoder.decode(title), content: decoder.decode(content), fields }
+}
+
+function encodeMessage(senderIdentity, senderDest, recipientDest, message) {
+  let { timestamp, title, content, ...fields } = message
+  timestamp = Math.floor(Date.now() / 1000)
+  title = title ? encoder.encode(title) : new Uint8Array(0)
+  content = content ? encoder.encode(content) : new Uint8Array(0)
+  const packedPayload = pack([timestamp, title, content, fields])
+
+  // Calculate hash: recipient + sender + payload
+  const hashedPart = new Uint8Array([...recipientDest, ...senderDest, ...packedPayload])
+  const messageHash = _sha256(hashedPart)
+
+  // Sign: hashedPart + messageHash
+  const signedPart = new Uint8Array([...hashedPart, ...messageHash])
+  const signature = _ed25519Sign(signedPart, senderIdentity.private.sign)
+
+  // LXMF message: senderDest (16) + signature (64) + packedPayload
+  return new Uint8Array([...senderDest, ...signature, ...packedPayload])
+}
+
+export function buildMessage(senderIdentity, senderDest, recipientAnnounce, message) {
+  const lxmfMessage = encodeMessage(senderIdentity, senderDest, recipientAnnounce.destinationHash, message)
+  return buildData(senderIdentity, recipientAnnounce, lxmfMessage)
 }
