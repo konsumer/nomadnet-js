@@ -9,7 +9,8 @@ import { hmac } from '@noble/hashes/hmac.js'
 import { hkdf } from '@noble/hashes/hkdf.js'
 import { ed25519 } from '@noble/curves/ed25519.js'
 import { x25519 } from '@noble/curves/ed25519.js'
-import { pack, unpack } from 'msgpackr'
+
+import { hexToBytes, bytesToHex } from '@noble/curves/utils.js'
 
 // Packet types
 export const PACKET_DATA = 0x00
@@ -145,12 +146,14 @@ function _pkcs7Unpad(data, blockSize = 16) {
 
 function _aesCbcEncrypt(key, iv, plaintext) {
   const cipher = cbc(key, iv)
-  return cipher.encrypt(plaintext)
+  // Noble does NOT auto-pad on encrypt, so we must pad manually
+  const padded = _pkcs7Pad(plaintext)
+  return cipher.encrypt(padded)
 }
 
 function _aesCbcDecrypt(key, iv, ciphertext) {
   const cipher = cbc(key, iv)
-  // Noble's CBC automatically removes PKCS7 padding on decrypt
+  // Noble auto-unpads on decrypt, so just return the result
   return cipher.decrypt(ciphertext)
 }
 
@@ -522,17 +525,42 @@ export function buildData(identity, recipientAnnounce, plaintext) {
   })
 }
 
+export function messageDecrypt(packet, identity, ratchets = null) {
+  const data = packet.data
+
+  if (data.length < 81) {
+    return null
+  }
+
+  const identityData = concatArrays([identity.public.encrypt, identity.public.sign])
+  const identityHash = _sha256(identityData).slice(0, 16)
+
+  const ephemeralPub = data.slice(0, 32)
+  const ciphertext = data.slice(32)
+
+  // Try decryption with ratchets first
+  if (ratchets && Array.isArray(ratchets)) {
+    for (let i = 0; i < ratchets.length; i++) {
+      const result = tryDecrypt(ephemeralPub, ciphertext, ratchets[i], identityHash, `ratchet ${i}`)
+      if (result) {
+        return result
+      }
+    }
+  }
+
+  // Try with identity private key
+  const result = tryDecrypt(ephemeralPub, ciphertext, identity.private.encrypt, identityHash, 'identity')
+  return result
+}
+
 function tryDecrypt(ephemeralPub, ciphertext, privateKey, identityHash) {
   try {
     const sharedKey = _x25519Exchange(privateKey, ephemeralPub)
-
     const derivedKey = _hkdf(64, sharedKey, identityHash, new Uint8Array(0))
     const signingKey = derivedKey.slice(0, 32)
     const encryptionKey = derivedKey.slice(32, 64)
 
-    if (ciphertext.length < 48) {
-      return null
-    }
+    if (ciphertext.length < 48) return null
 
     const receivedHmac = ciphertext.slice(-32)
     const signedData = ciphertext.slice(0, -32)
@@ -542,35 +570,10 @@ function tryDecrypt(ephemeralPub, ciphertext, privateKey, identityHash) {
 
     const iv = signedData.slice(0, 16)
     const actualCiphertext = signedData.slice(16)
-    const paddedPlaintext = _aesCbcDecrypt(encryptionKey, iv, actualCiphertext)
 
-    const result = _pkcs7Unpad(paddedPlaintext)
-    return result
+    // Noble already removes padding on decrypt
+    return _aesCbcDecrypt(encryptionKey, iv, actualCiphertext)
   } catch (e) {
     return null
   }
-}
-
-export function messageDecrypt(packet, identity, ratchets = null) {
-  const data = packet.data
-  if (data.length < 81) return null // Min: 32 (ephemeral) + 16 (IV) + 16 (min cipher) + 32 (HMAC) + others
-
-  // Calculate identity hash
-  const identityData = concatArrays([identity.public.encrypt, identity.public.sign])
-  const identityHash = _sha256(identityData).slice(0, 16)
-
-  // Extract components
-  const ephemeralPub = data.slice(0, 32)
-  const ciphertext = data.slice(32)
-
-  // Try decryption with ratchets first
-  if (ratchets && Array.isArray(ratchets)) {
-    for (const ratchet of ratchets) {
-      const result = tryDecrypt(ephemeralPub, ciphertext, ratchet, identityHash)
-      if (result) return result
-    }
-  }
-
-  // Try with identity private key
-  return tryDecrypt(ephemeralPub, ciphertext, identity.private.encrypt, identityHash)
 }
