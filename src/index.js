@@ -153,8 +153,21 @@ function _aesCbcEncrypt(key, iv, plaintext) {
 
 function _aesCbcDecrypt(key, iv, ciphertext) {
   const cipher = cbc(key, iv)
-  // Noble auto-unpads on decrypt, so just return the result
-  return cipher.decrypt(ciphertext)
+  const result = cipher.decrypt(ciphertext)
+
+  // Check if padding is still present (seems to vary, weirdly)
+  const lastByte = result[result.length - 1]
+  if (lastByte > 0 && lastByte <= 16) {
+    // Padding might still be there, try to unpad
+    try {
+      return _pkcs7Unpad(result)
+    } catch (e) {
+      // If unpadding fails, return as-is (already unpadded)
+      return result
+    }
+  }
+
+  return result
 }
 
 function _ed25519Sign(data, privateKey) {
@@ -503,9 +516,8 @@ export function buildData(identity, recipientAnnounce, plaintext) {
   const encryptionKey = derivedKey.slice(32, 64)
 
   // Encrypt the plaintext
-  const paddedPlaintext = _pkcs7Pad(plaintext)
   const iv = randomBytes(16)
-  const ciphertext = _aesCbcEncrypt(encryptionKey, iv, paddedPlaintext)
+  const ciphertext = _aesCbcEncrypt(encryptionKey, iv, plaintext)
 
   // Create HMAC over IV + ciphertext
   const signedData = concatArrays([iv, ciphertext])
@@ -571,7 +583,6 @@ function tryDecrypt(ephemeralPub, ciphertext, privateKey, identityHash) {
     const iv = signedData.slice(0, 16)
     const actualCiphertext = signedData.slice(16)
 
-    // Noble already removes padding on decrypt
     return _aesCbcDecrypt(encryptionKey, iv, actualCiphertext)
   } catch (e) {
     return null
