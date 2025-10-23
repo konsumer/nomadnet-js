@@ -1,8 +1,7 @@
 // This is for the browser-demo
 
 import 'pop-notify'
-import 'pop-notify/pop-notify.css'
-import '@picocss/pico'
+import './site.css'
 
 import * as rns from '../src/index.js'
 import { bytesToHex, hexToBytes, randomBytes } from '@noble/curves/utils.js'
@@ -13,6 +12,7 @@ const privkeyHolder = document.getElementById('privkeyHolder')
 const inputPrivateKey = document.getElementById('inputPrivateKey')
 const buttonGenerate = document.getElementById('buttonGenerate')
 const buttonSet = document.getElementById('buttonSet')
+const buttonDeletePeers = document.getElementById('buttonDeletePeers')
 const lxmfAddress = document.getElementById('lxmfAddress')
 const buttonAnnounce = document.getElementById('buttonAnnounce')
 const peerList = document.getElementById('peerList')
@@ -96,7 +96,7 @@ let identity
 const messages = {}
 const ratchets = []
 let ratchetPub
-const peers = JSON.parse(localStorage.peers || '{}')
+let peers = JSON.parse(localStorage.peers || '{}')
 updatePeers()
 
 function updatePeers() {
@@ -129,4 +129,10 @@ buttonSet.addEventListener('click', (e) => {
     // setInterval(announce, 60000 * 60) // announce every hour
     announce()
   }
+})
+
+buttonDeletePeers.addEventListener('click', (e) => {
+  localStorage.peers = JSON.stringify('{}')
+  peers = {}
+  updatePeers()
 })
