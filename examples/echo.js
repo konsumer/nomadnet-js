@@ -1,6 +1,7 @@
 // this is a simple echo-server that runs over websocket
 
 import { identityCreate, getDestinationHash, ratchetCreateNew, ratchetGetPublic, decodePacket, buildAnnounce, buildProof, messageDecrypt, parseLxmfMessage, buildLxmfMessage, getMessageId, announceParse, PACKET_ANNOUNCE, PACKET_PROOF, PACKET_DATA } from '../src/index.js'
+import { bytesToHex } from '@noble/curves/utils.js'
 
 const uri = 'wss://signal.konsumer.workers.dev/ws/reticulum'
 
@@ -41,8 +42,21 @@ async function handleAnnounce(packet) {
     announces[Buffer.from(packet.destinationHash).toString('hex')] = announce
     announces[Buffer.from(packet.destinationHash).toString('hex')].destinationHash = packet.destinationHash
     console.log(`  Saved (${Object.keys(announces).length}) announce from ${Buffer.from(packet.destinationHash).toString('hex')}`)
-  }else {
+  } else {
     console.log('  Valid: No')
+    // console.log(`  Raw Bytes: ${bytesToHex(packet.raw)}`)
+    // console.log({
+    //   destinationHash: bytesToHex(packet.destinationHash),
+    //   sourceHash: bytesToHex(packet.sourceHash),
+    //   context: packet.context,
+    //   ifacFlag: packet.ifacFlag,
+    //   headerType: packet.headerType,
+    //   contextFlag: packet.contextFlag,
+    //   propagationType: packet.propagationType,
+    //   destinationType: packet.destinationType,
+    //   packetType: packet.packetType,
+    //   hops: packet.hops
+    // })
   }
 }
 

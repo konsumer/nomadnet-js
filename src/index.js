@@ -197,16 +197,21 @@ export function decodePacket(packetBytes) {
   }
 
   let offset = 2
-  result.destinationHash = packetBytes.slice(offset, offset + 16)
-  offset += 16
 
   if (result.headerType) {
+    // Double header: first hash is source, second is destination
     result.sourceHash = packetBytes.slice(offset, offset + 16)
     offset += 16
+    result.destinationHash = packetBytes.slice(offset, offset + 16)
+    offset += 16
   } else {
+    // Single header: only destination hash
+    result.destinationHash = packetBytes.slice(offset, offset + 16)
+    offset += 16
     result.sourceHash = null
   }
 
+  // ALWAYS read context byte
   result.context = packetBytes[offset]
   offset += 1
 
