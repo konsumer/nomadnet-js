@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+"""
+Use this to compare output/interop with js
+"""
+
 import RNS
 import LXMF
 import json

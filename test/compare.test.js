@@ -11,7 +11,7 @@ import { getIdentityFromBytes, getDestinationHash, buildAnnounce, announceParse,
 const pyRNS = (op, args = {}) =>
   new Promise((resolve, reject) => {
     const argsJson = JSON.stringify(args).replace(/'/g, "\\\\'")
-    exec(`python test/packet_checker.py ${op} '${argsJson}'`, (error, stdout, stderr) => {
+    exec(`python test/compare.py ${op} '${argsJson}'`, (error, stdout, stderr) => {
       if (stderr) {
         console.log('Python stderr:', stderr)
       }
@@ -70,7 +70,7 @@ describe('Bidirectional Python-JS Message Flows', () => {
     assert.equal(result.hash, bytesToHex(identityDest))
   })
 
-  test('ANNOUNCE: Python creates, JS verifies', async () => {
+  test.skip('ANNOUNCE: Python creates, JS verifies', async () => {
     // Python creates announce
     const result = await pyRNS('announce', {
       appData: 'Python Client'

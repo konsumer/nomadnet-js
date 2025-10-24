@@ -26,22 +26,6 @@ async function periodicAnnounce(websocket, interval = 30000) {
       const announceBytes = buildAnnounce(me, meDest, 'lxmf.delivery', ratchetPub)
       const decoded = decodePacket(announceBytes)
       const parsed = announceParse({ destinationHash: meDest, ...decoded })
-
-      console.log('\n=== My ANNOUNCE ===')
-      console.log(`  Valid: ${parsed.valid}`)
-      console.log(`  Destination: ${bytesToHex(parsed.destinationHash)}`)
-      console.log(`  Sign pub: ${bytesToHex(parsed.keyPubSignature)}`)
-      console.log(`  Encrypt pub: ${bytesToHex(parsed.keyPubEncrypt)}`)
-      console.log(`  Ratchet pub: ${bytesToHex(parsed.ratchetPub)}`)
-
-      console.log('\n=== PROOF Verification ===')
-      console.log(`  My sign private: ${bytesToHex(me.private.sign).slice(0, 32)}...`)
-      console.log(`  My sign public: ${bytesToHex(me.public.sign)}`)
-
-      // In your announce check:
-      console.log(`  Announced sign public: ${bytesToHex(parsed.keyPubSignature)}`)
-      console.log(`  Match: ${bytesToHex(me.public.sign) === bytesToHex(parsed.keyPubSignature)}`)
-
       websocket.send(announceBytes)
       await new Promise((resolve) => setTimeout(resolve, interval))
     } catch (e) {
@@ -79,8 +63,9 @@ async function handleData(packet, websocket) {
   // Check if it's for me
   if (bytesToHex(packet.destinationHash) === bytesToHex(meDest)) {
     console.log('  Message is for ME')
+    console.log(`  Message ID: ${bytesToHex(messageId)}`)
 
-    console.log(`  Raw Bytes: ${bytesToHex(packet.raw)}`)
+    // console.log(`  Raw Bytes: ${bytesToHex(packet.raw)}`)
 
     // Decrypt the message
     const plaintext = messageDecrypt(packet, me, [ratchet])
@@ -88,51 +73,15 @@ async function handleData(packet, websocket) {
     if (plaintext) {
       console.log(`  Decrypted ${plaintext.length} bytes`)
 
-      // Try without context byte (offset 18)
-      const modifiedHeader = new Uint8Array([packet.raw[0] & 0x0f])
-      const dataNoContext = packet.raw.slice(18) // Skip header + hops + dest only
-      const messageIdNoContext = _sha256(new Uint8Array([...modifiedHeader, ...dataNoContext]))
-
-      console.log(`  Message ID (with context): ${bytesToHex(messageId)}`)
-      console.log(`  Message ID (no context): ${bytesToHex(messageIdNoContext)}`)
-
-      websocket.send(buildProof(me, packet, messageId))
-      websocket.send(buildProof(me, packet, messageIdNoContext))
+      const proofPacket = buildProof(me, packet, messageId)
+      console.log(`[JS_SEND] Sending PROOF`)
+      console.log(`[JS_SEND] PROOF hex: ${bytesToHex(proofPacket)}`)
+      websocket.send(proofPacket)
 
       try {
         const message = decodeMessage(plaintext)
-        console.log(`  From: ${bytesToHex(message.senderHash)}`)
-        console.log(`  Title: ${message.title}`)
-        console.log(`  Content: ${message.content}`)
-
         const senderHashHex = bytesToHex(message.senderHash)
         const recipientAnnounce = announces[senderHashHex]
-
-        // When you receive an announce
-        console.log(`  Stored announce: ${senderHashHex}`)
-        console.log(`    Destination: ${bytesToHex(recipientAnnounce.destinationHash)}`)
-        console.log(`    Encrypt pub: ${bytesToHex(recipientAnnounce.keyPubEncrypt)}`)
-        console.log(`    Sign pub: ${bytesToHex(recipientAnnounce.keyPubSignature)}`)
-
-        if (recipientAnnounce) {
-          console.log(`  Found announce for ${senderHashHex}`)
-          console.log(`  Their dest: ${bytesToHex(recipientAnnounce.destinationHash)}`)
-          console.log(`  My dest: ${bytesToHex(meDest)}`)
-
-          const retMessage = buildMessage(me, meDest, recipientAnnounce, {
-            title: 'EchoBot',
-            content: message.content
-          })
-
-          console.log(`  Sending echo (${retMessage.length} bytes)`)
-          console.log(`  Echo packet hex (first 100): ${bytesToHex(retMessage.slice(0, 100))}`)
-
-          console.log(`  Reply messageId (32 bytes): ${bytesToHex(getMessageId(decodePacket(retMessage)))}`)
-          websocket.send(retMessage)
-        } else {
-          console.log(`  No announce found for ${senderHashHex}`)
-          console.log(`  Available announces: ${Object.keys(announces).join(', ')}`)
-        }
       } catch (e) {
         console.error('  Error parsing LXMF message:', e)
         console.error(e.stack)
@@ -155,6 +104,11 @@ async function handleIncoming(websocket) {
       } else if (packet.packetType === PACKET_PROOF) {
         await handleProof(packet)
       } else if (packet.packetType === PACKET_DATA) {
+        console.log(`[JS_RECV] Full packet hex: ${bytesToHex(data)}`)
+        const messageId = getMessageId(packet)
+        console.log(`[JS_RECV] Calculated message ID: ${bytesToHex(messageId)}`)
+        console.log(`[JS_RECV] PROOF destination: ${bytesToHex(messageId.slice(0, 16))}`)
+
         await handleData(packet, websocket)
       }
     } catch (e) {
