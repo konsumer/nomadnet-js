@@ -3,7 +3,7 @@
 // I used this to build offline-test.
 
 import { bytesToHex } from '@noble/curves/utils.js'
-import { decodePacket, PACKET_DATA, PACKET_ANNOUNCE, PACKET_LINKREQUEST, PACKET_PROOF } from '../src/index.js'
+import { decodePacket, getMessageId, PACKET_DATA, PACKET_ANNOUNCE, PACKET_LINKREQUEST, PACKET_PROOF } from '../src/index.js'
 
 import WebSocket from 'ws'
 
@@ -24,6 +24,9 @@ packetTypeNames[PACKET_PROOF] = 'PROOF'
 ws.on('message', (data) => {
   const p = decodePacket(data)
   let destinationAddress = bytesToHex(p.destinationHash)
-  console.log(`${packetTypeNames[p.packetType]} (${destinationAddress}): `, bytesToHex(data))
-  // console.log(p)
+  if (p.packetType === PACKET_DATA) {
+    console.log(`${packetTypeNames[p.packetType]} (${destinationAddress} - ${bytesToHex(getMessageId(p))}):`, bytesToHex(data))
+  } else {
+    console.log(`${packetTypeNames[p.packetType] || `UNKNOWN ${p.packetType}`} (${destinationAddress}):`, bytesToHex(data))
+  }
 })

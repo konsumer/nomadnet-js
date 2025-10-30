@@ -10,7 +10,7 @@ const encoder = new TextEncoder()
 
 // Create identity and destination
 const me = identityCreate()
-const meDest = getDestinationHash(me, 'lxmf', 'delivery')
+const meDest = getDestinationHash(me, 'lxmf.delivery')
 
 // Create ratchet (normally regenerated periodically)
 const ratchet = ratchetCreateNew()
@@ -24,8 +24,6 @@ async function periodicAnnounce(websocket, interval = 30000) {
   while (true) {
     try {
       const announceBytes = buildAnnounce(me, meDest, 'lxmf.delivery', ratchetPub)
-      const decoded = decodePacket(announceBytes)
-      const parsed = announceParse({ destinationHash: meDest, ...decoded })
       websocket.send(announceBytes)
       await new Promise((resolve) => setTimeout(resolve, interval))
     } catch (e) {
@@ -65,17 +63,13 @@ async function handleData(packet, websocket) {
     console.log('  Message is for ME')
     console.log(`  Message ID: ${bytesToHex(messageId)}`)
 
-    // console.log(`  Raw Bytes: ${bytesToHex(packet.raw)}`)
-
     // Decrypt the message
     const plaintext = messageDecrypt(packet, me, [ratchet])
 
     if (plaintext) {
-      console.log(`  Decrypted ${plaintext.length} bytes`)
+      console.log(`  Decrypted ${plaintext.length} bytes: ${bytesToHex(plaintext)}`)
 
       const proofPacket = buildProof(me, packet, messageId)
-      console.log(`[JS_SEND] Sending PROOF`)
-      console.log(`[JS_SEND] PROOF hex: ${bytesToHex(proofPacket)}`)
       websocket.send(proofPacket)
 
       try {
@@ -104,11 +98,7 @@ async function handleIncoming(websocket) {
       } else if (packet.packetType === PACKET_PROOF) {
         await handleProof(packet)
       } else if (packet.packetType === PACKET_DATA) {
-        console.log(`[JS_RECV] Full packet hex: ${bytesToHex(data)}`)
         const messageId = getMessageId(packet)
-        console.log(`[JS_RECV] Calculated message ID: ${bytesToHex(messageId)}`)
-        console.log(`[JS_RECV] PROOF destination: ${bytesToHex(messageId.slice(0, 16))}`)
-
         await handleData(packet, websocket)
       }
     } catch (e) {
