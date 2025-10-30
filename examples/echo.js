@@ -1,6 +1,6 @@
 // this is a simple echo-server that runs over websocket
 
-import { _sha256, identityCreate, getDestinationHash, ratchetCreateNew, ratchetGetPublic, decodePacket, buildAnnounce, proofValidate, buildProof, decodeMessage, buildMessage, messageDecrypt, getMessageId, announceParse, PACKET_ANNOUNCE, PACKET_PROOF, PACKET_DATA } from '../src/index.js'
+import { _sha256, identityCreate, getDestinationHash, ratchetCreateNew, ratchetGetPublic, decodePacket, buildAnnounce, proofValidate, buildProof, validateLxmfMessage, decodeLxmfMessage, encodeLxmfMessage, messageDecrypt, getMessageId, announceParse, PACKET_ANNOUNCE, PACKET_PROOF, PACKET_DATA } from '../src/index.js'
 import { bytesToHex } from '@noble/curves/utils.js'
 
 const uri = 'wss://signal.konsumer.workers.dev/ws/reticulum'
@@ -39,7 +39,7 @@ async function handleAnnounce(packet) {
   console.log(`ANNOUNCE from ${bytesToHex(packet.destinationHash)}`)
   const announce = announceParse(packet)
   if (announce.valid) {
-    announces[bytesToHex(packet.destinationHash)] = announce
+    announces[bytesToHex(packet.destinationHash)] = { ...packet, ...announce }
     announces[bytesToHex(packet.destinationHash)].destinationHash = packet.destinationHash
     console.log('  Valid: Yes')
     console.log(`  Saved (${Object.keys(announces).length}) announce from ${bytesToHex(packet.destinationHash)}`)
@@ -51,20 +51,19 @@ async function handleAnnounce(packet) {
 // Handle PROOF packets
 async function handleProof(packet) {
   console.log(`PROOF for message ${bytesToHex(packet.destinationHash)}`)
-  const valid = proofValidate(packet)
-  console.log(`  Valid: ${valid ? 'Yes' : 'No'}`)
+  // const valid = proofValidate(packet)
+  // console.log(`  Valid: ${valid ? 'Yes' : 'No'}`)
 }
 
 // Handle DATA packets
 async function handleData(packet, websocket) {
   const messageId = getMessageId(packet)
-  console.log(`\nDATA (${bytesToHex(messageId)}) for ${bytesToHex(packet.destinationHash)}`)
+  console.log(`\nDATA (${bytesToHex(packet.destinationHash)})`)
 
   // Check if it's for me
   if (bytesToHex(packet.destinationHash) === bytesToHex(meDest)) {
-    console.log('  Message is for ME')
     console.log(`  Message ID: ${bytesToHex(messageId)}`)
-
+    console.log('  Message is for ME')
     console.log(`  Sending PROOF`)
     const proofPacket = buildProof(me, packet, messageId)
     websocket.send(proofPacket)
@@ -74,10 +73,22 @@ async function handleData(packet, websocket) {
 
     if (plaintext) {
       try {
-        const message = decodeMessage(plaintext)
+        const message = decodeLxmfMessage(plaintext)
+        console.log('  Payload:', bytesToHex(message.payload))
         const senderHashHex = bytesToHex(message.senderHash)
+        const senderAnnounce = announces[senderHashHex]
+        const valid = senderAnnounce && validateLxmfMessage(message, meDest, senderAnnounce.keyPubSignature)
+        console.log('  Valid:', valid ? 'Yes' : 'No')
         console.log(`  Decrypted: ${JSON.stringify({ sender: senderHashHex, title: message.title, content: message.content })}`)
-        const recipientAnnounce = announces[senderHashHex]
+        console.log('  Sending response')
+
+        console.log('message.senderHash:', bytesToHex(message.senderHash))
+        console.log('senderAnnounce.destinationHash:', bytesToHex(senderAnnounce.destinationHash))
+        console.log('Are they equal?', bytesToHex(message.senderHash) === bytesToHex(senderAnnounce.destinationHash))
+
+        const responsePacket = encodeLxmfMessage(me, meDest, senderAnnounce, { content: message.content, title: 'Echobot Response' }, message.senderHash)
+
+        websocket.send(responsePacket)
       } catch (e) {
         console.error('  Error parsing LXMF message:', e)
         console.error(e.stack)

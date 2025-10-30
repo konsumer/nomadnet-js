@@ -3,7 +3,7 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert'
 
-import { identityCreate, getDestinationHash, ratchetCreateNew, ratchetGetPublic, encodePacket, buildMessage, decodePacket, decodeMessage, buildAnnounce, announceParse, buildProof, proofValidate, buildData, messageDecrypt, getMessageId } from '../src/index.js'
+import { identityCreate, getDestinationHash, ratchetCreateNew, ratchetGetPublic, encodePacket, encodeLxmfMessage, decodePacket, decodeLxmfMessage, buildAnnounce, announceParse, buildProof, proofValidate, buildData, messageDecrypt, getMessageId } from '../src/index.js'
 
 const encoder = new TextEncoder()
 
@@ -355,13 +355,13 @@ describe('LXMF higher-level DATA functions', () => {
     const recipientDest = getDestinationHash(recipientIdentity, 'lxmf.delivery')
     const recipientAnnounce = announceParse(decodePacket(buildAnnounce(recipientIdentity, recipientDest, 'lxmf.delivery')))
 
-    const messageIn = buildMessage(senderIdentity, senderDest, recipientAnnounce, {
+    const messageIn = encodeLxmfMessage(senderIdentity, senderDest, recipientAnnounce, {
       content: 'Hello world'
     })
     assert.ok(messageIn.length)
 
     const packet = decodePacket(messageIn)
-    const messageOut = decodeMessage(messageDecrypt(packet, recipientIdentity))
+    const messageOut = decodeLxmfMessage(messageDecrypt(packet, recipientIdentity))
     assert.deepEqual(senderDest, messageOut.senderHash)
     assert.equal(messageOut.title, '')
     assert.equal(messageOut.content, 'Hello world')

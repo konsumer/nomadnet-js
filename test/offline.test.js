@@ -5,7 +5,7 @@ import assert from 'node:assert'
 import { hexToBytes, bytesToHex } from '@noble/curves/utils.js'
 import { unpack } from 'msgpackr'
 
-import { getDestinationHash, getIdentityFromBytes, ratchetGetPublic, decodePacket, decodeMessage, announceParse, proofValidate, messageDecrypt, getMessageId, PACKET_DATA, PACKET_ANNOUNCE, PACKET_PROOF } from '../src/index.js'
+import { getDestinationHash, getIdentityFromBytes, ratchetGetPublic, decodePacket, decodeLxmfMessage, announceParse, proofValidate, messageDecrypt, getMessageId, PACKET_DATA, PACKET_ANNOUNCE, PACKET_PROOF } from '../src/index.js'
 
 export const keys = {
   '072ec44973a8dee8e28d230fb4af8fe4': hexToBytes('205131cb9672eaec8a582e8e018307f2428c4aac5e383f12e94939e672b931677763c7398d0b9cb6ef1369d023d8af10b85d80f6579c55a6f528953265c15313'),
@@ -185,7 +185,7 @@ describe('LXMF higher-level DATA functions: decode', () => {
     const identity = recipients['76a93cda889a8c0a88451e02d53fd8b9']
     assert.ok(identity)
 
-    const message = decodeMessage(messageDecrypt(packet, identity, ratchets))
+    const message = decodeLxmfMessage(messageDecrypt(packet, identity, ratchets))
     assert.equal(message.title, '')
     assert.equal(message.content, 'hello from A')
     assert.deepEqual(message.fields, {})
@@ -202,7 +202,7 @@ describe('LXMF higher-level DATA functions: decode', () => {
     const identity = recipients['072ec44973a8dee8e28d230fb4af8fe4']
     assert.ok(identity)
 
-    const message = decodeMessage(messageDecrypt(packet, identity, ratchets))
+    const message = decodeLxmfMessage(messageDecrypt(packet, identity, ratchets))
     assert.equal(message.title, '')
     assert.equal(message.content, 'hello from B')
     assert.deepEqual(message.fields, {})

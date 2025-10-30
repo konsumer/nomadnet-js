@@ -7,8 +7,7 @@ import { randomBytes } from '@noble/ciphers/utils.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { hmac } from '@noble/hashes/hmac.js'
 import { hkdf } from '@noble/hashes/hkdf.js'
-import { ed25519 } from '@noble/curves/ed25519.js'
-import { x25519 } from '@noble/curves/ed25519.js'
+import { ed25519, x25519 } from '@noble/curves/ed25519.js'
 import { unpack, pack } from 'msgpackr'
 
 import { hexToBytes, bytesToHex } from '@noble/curves/utils.js'
@@ -611,33 +610,47 @@ function tryDecrypt(ephemeralPub, ciphertext, privateKey, identityHash) {
 // LXMF higher-level DATA functions
 // ============================================================================
 
-export function decodeMessage(plaintext) {
-  const [ts, title, content, fields] = unpack(plaintext.slice(80))
+export function decodeLxmfMessage(plaintext) {
   const senderHash = plaintext.slice(0, 16)
   const signature = plaintext.slice(16, 80)
-  return { senderHash, signature, title: decoder.decode(title), content: decoder.decode(content), fields }
+  const payload = plaintext.slice(80)
+  const [ts, title, content, fields] = unpack(payload)
+
+  return {
+    ts,
+    senderHash,
+    signature,
+    payload,
+    title: decoder.decode(title),
+    content: decoder.decode(content),
+    fields
+  }
 }
 
-function encodeMessage(senderIdentity, senderDest, recipientDest, message) {
+export function validateLxmfMessage(decodedMessage, myDest, senderPublicSignKey) {
+  const hashedPart = new Uint8Array([...myDest, ...decodedMessage.senderHash, ...decodedMessage.payload])
+  const messageHash = _sha256(hashedPart)
+  const signedData = new Uint8Array([...hashedPart, ...messageHash])
+
+  return _ed25519Validate(senderPublicSignKey, decodedMessage.signature, signedData)
+}
+
+function _encodeLxmfMessage(senderIdentity, senderDest, recipientDest, message) {
   let { timestamp, title, content, ...fields } = message
-  timestamp = Math.floor(Date.now() / 1000)
+  timestamp = timestamp || Math.floor(Date.now() / 1000)
   title = title ? encoder.encode(title) : new Uint8Array(0)
   content = content ? encoder.encode(content) : new Uint8Array(0)
-  const packedPayload = pack([timestamp, title, content, fields])
-
-  // Calculate hash: recipient + sender + payload
-  const hashedPart = new Uint8Array([...recipientDest, ...senderDest, ...packedPayload])
+  const payload = pack([timestamp, title, content, fields])
+  const hashedPart = new Uint8Array([...recipientDest, ...senderDest, ...payload])
   const messageHash = _sha256(hashedPart)
-
-  // Sign: hashedPart + messageHash
-  const signedPart = new Uint8Array([...hashedPart, ...messageHash])
-  const signature = _ed25519Sign(signedPart, senderIdentity.private.sign)
-
-  // LXMF message: senderDest (16) + signature (64) + packedPayload
-  return new Uint8Array([...senderDest, ...signature, ...packedPayload])
+  const signedData = new Uint8Array([...hashedPart, ...messageHash])
+  const signature = _ed25519Sign(signedData, senderIdentity.private.sign)
+  const lxmfMessage = new Uint8Array([...senderDest, ...signature, ...payload])
+  return lxmfMessage
 }
 
-export function buildMessage(senderIdentity, senderDest, recipientAnnounce, message) {
-  const lxmfMessage = encodeMessage(senderIdentity, senderDest, recipientAnnounce.destinationHash, message)
+export function encodeLxmfMessage(senderIdentity, senderDest, recipientAnnounce, message, recipientMessageHash = null) {
+  const recipientDest = recipientMessageHash || recipientAnnounce.destinationHash
+  const lxmfMessage = _encodeLxmfMessage(senderIdentity, senderDest, recipientDest, message)
   return buildData(senderIdentity, recipientAnnounce, lxmfMessage)
 }
