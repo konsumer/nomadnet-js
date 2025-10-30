@@ -282,7 +282,8 @@ export function encodePacket(packet) {
   if (packet.headerType) headerByte |= 0b01000000
   if (packet.contextFlag) headerByte |= 0b00100000
   if (packet.propagationType) headerByte |= 0b00010000
-  headerByte |= (packet.destinationType || 0) & 0b00001100
+  // headerByte |= (packet.destinationType || 0) & 0b00001100
+  headerByte |= ((packet.destinationType || 0) << 2) & 0b00001100
   headerByte |= (packet.packetType || 0) & 0b00000011
 
   const parts = [new Uint8Array([headerByte]), new Uint8Array([packet.hops || 0])]
@@ -470,11 +471,11 @@ export function buildProof(identity, packet, messageId = null) {
   // Sign the full message ID
   const signature = _ed25519Sign(messageId, identity.private.sign)
 
-  // Proof packet data: version byte + signature
-  const proofData = new Uint8Array([0x00, ...signature])
+  // Explicit proof: full hash + signature (no version byte)
+  const proofData = new Uint8Array([...messageId, ...signature])
 
   return encodePacket({
-    destinationHash: messageId.slice(0, 16),
+    destinationHash: messageId.slice(0, 16), // First 16 bytes of message ID
     packetType: PACKET_PROOF,
     destinationType: 0,
     hops: 0,

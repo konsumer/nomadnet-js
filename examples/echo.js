@@ -41,6 +41,7 @@ async function handleAnnounce(packet) {
   if (announce.valid) {
     announces[bytesToHex(packet.destinationHash)] = announce
     announces[bytesToHex(packet.destinationHash)].destinationHash = packet.destinationHash
+    console.log('  Valid: Yes')
     console.log(`  Saved (${Object.keys(announces).length}) announce from ${bytesToHex(packet.destinationHash)}`)
   } else {
     console.log('  Valid: No')
@@ -64,17 +65,18 @@ async function handleData(packet, websocket) {
     console.log('  Message is for ME')
     console.log(`  Message ID: ${bytesToHex(messageId)}`)
 
+    console.log(`  Sending PROOF`)
+    const proofPacket = buildProof(me, packet, messageId)
+    websocket.send(proofPacket)
+
     // Decrypt the message
     const plaintext = messageDecrypt(packet, me, [ratchet])
 
     if (plaintext) {
-      const proofPacket = buildProof(me, packet, messageId)
-      websocket.send(proofPacket)
-
       try {
         const message = decodeMessage(plaintext)
         const senderHashHex = bytesToHex(message.senderHash)
-        console.log(`  Decrypted: ${JSON.stringify({ sender: senderHashHex, title: message.title, content: message.title })}`)
+        console.log(`  Decrypted: ${JSON.stringify({ sender: senderHashHex, title: message.title, content: message.content })}`)
         const recipientAnnounce = announces[senderHashHex]
       } catch (e) {
         console.error('  Error parsing LXMF message:', e)
@@ -84,7 +86,7 @@ async function handleData(packet, websocket) {
       console.log('  Could not decrypt')
     }
   } else {
-    console.log(`  Not for me (mine: ${bytesToHex(meDest)})`)
+    console.log(`  Not for me`)
   }
 }
 
