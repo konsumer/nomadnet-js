@@ -23,6 +23,7 @@ const announces = {}
 async function periodicAnnounce(websocket, interval = 30000) {
   while (true) {
     try {
+      console.log(`Announcing ${bytesToHex(meDest)}`)
       const announceBytes = buildAnnounce(me, meDest, 'lxmf.delivery', ratchetPub)
       websocket.send(announceBytes)
       await new Promise((resolve) => setTimeout(resolve, interval))
@@ -67,14 +68,13 @@ async function handleData(packet, websocket) {
     const plaintext = messageDecrypt(packet, me, [ratchet])
 
     if (plaintext) {
-      console.log(`  Decrypted ${plaintext.length} bytes: ${bytesToHex(plaintext)}`)
-
       const proofPacket = buildProof(me, packet, messageId)
       websocket.send(proofPacket)
 
       try {
         const message = decodeMessage(plaintext)
         const senderHashHex = bytesToHex(message.senderHash)
+        console.log(`  Decrypted: ${JSON.stringify({ sender: senderHashHex, title: message.title, content: message.title })}`)
         const recipientAnnounce = announces[senderHashHex]
       } catch (e) {
         console.error('  Error parsing LXMF message:', e)
@@ -109,7 +109,6 @@ async function handleIncoming(websocket) {
 }
 
 console.log(`Connecting to ${uri}`)
-console.log(`My destination: ${bytesToHex(meDest)}`)
 
 const WebSocket = (await import('ws')).default
 const websocket = new WebSocket(uri)
