@@ -486,12 +486,25 @@ export function buildProof(identity, packet, messageId = null) {
 }
 
 export function proofValidate(packet, identity, fullPacketHash) {
-  if (packet.data.length === 64) {
-    // Old format: no version byte, just 64-byte signature
+  if (packet.data.length === 96) {
+    // Explicit proof: 32-byte hash + 64-byte signature
+    const proofHash = packet.data.slice(0, 32)
+    const signature = packet.data.slice(32, 96)
+
+    // Verify the hash matches what we expect
+    const hashMatch = proofHash.every((byte, i) => byte === fullPacketHash[i])
+    if (!hashMatch) {
+      return false
+    }
+
+    // Verify the signature
+    return _ed25519Validate(identity.public.sign, signature, fullPacketHash)
+  } else if (packet.data.length === 64) {
+    // Implicit proof: just 64-byte signature
     const signature = packet.data
     return _ed25519Validate(identity.public.sign, signature, fullPacketHash)
   } else if (packet.data.length === 65) {
-    // New format: version byte + 64-byte signature
+    // Old format: version byte + 64-byte signature
     const signature = packet.data.slice(1, 65)
     return _ed25519Validate(identity.public.sign, signature, fullPacketHash)
   } else {
