@@ -2,15 +2,32 @@
  * Lightweight Reticulum library for JavaScript
  */
 
-import { cbc } from '@noble/ciphers/aes.js'
-import { randomBytes } from '@noble/ciphers/utils.js'
-import { sha256 } from '@noble/hashes/sha2.js'
-import { hmac } from '@noble/hashes/hmac.js'
-import { hkdf } from '@noble/hashes/hkdf.js'
-import { ed25519, x25519 } from '@noble/curves/ed25519.js'
-import { unpack, pack } from 'msgpackr'
+// prettier-ignore
+import {
+  aesCbcDecrypt,
+  aesCbcEncrypt,
+  bytesToHex,
+  concatBytes,
+  ed25519Sign,
+  ed25519Validate,
+  equalBytes,
+  getIdentityFromBytes,
+  hexToBytes,
+  hkdf,
+  hmacSha256,
+  identityCreate,
+  msgpack,
+  msgunpack,
+  randomBytes,
+  sha256,
+  x25519Exchange,
+  x25519PrivateCreateNew,
+  x25519PublicForPrivate
+} from './utils.js'
 
-import { hexToBytes, bytesToHex } from '@noble/curves/utils.js'
+export { identityCreate, getIdentityFromBytes }
+export const ratchetCreateNew = x25519PrivateCreateNew
+export const ratchetGetPublic = x25519PublicForPrivate
 
 // Packet types
 export const PACKET_DATA = 0x00
@@ -54,226 +71,35 @@ export const TRANSPORT_TRANSPORT = 1
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
-function concatArrays(arrays) {
-  const totalLength = arrays.reduce((sum, arr) => sum + arr.length, 0)
-  const result = new Uint8Array(totalLength)
-  let offset = 0
-  for (const arr of arrays) {
-    result.set(arr, offset)
-    offset += arr.length
-  }
-  return result
-}
-
-function arraysEqual(a, b) {
-  if (a.length !== b.length) return false
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false
-  }
-  return true
-}
-
-// Crypto helper functions
-function _hmacSha256(key, data) {
-  return hmac(sha256, key, data)
-}
-
-export function _sha256(data) {
-  return sha256(data)
-}
-
-function _hkdf(length, deriveFrom, salt, context = null) {
-  const hashLen = 32
-
-  if (!length || length < 1) {
-    throw new Error('Invalid output key length')
-  }
-
-  if (!deriveFrom || deriveFrom.length === 0) {
-    throw new Error('Cannot derive key from empty input material')
-  }
-
-  if (!salt || salt.length === 0) {
-    salt = new Uint8Array(hashLen)
-  }
-
-  if (context === null) {
-    context = new Uint8Array(0)
-  }
-
-  return hkdf(sha256, deriveFrom, salt, context, length)
-}
-
-// PKCS7 padding - only needed for encryption (Noble auto-unpads on decrypt)
-function _pkcs7Pad(data, bs = 16) {
-  const l = data.length
-  const n = bs - (l % bs)
-  const padding = new Uint8Array(n).fill(n)
-  const result = new Uint8Array(l + n)
-  result.set(data)
-  result.set(padding, l)
-  return result
-}
-
-function _pkcs7Unpad(data, blockSize = 16) {
-  if (!data || data.length === 0) {
-    throw new Error('Cannot unpad empty data')
-  }
-
-  if (data.length % blockSize !== 0) {
-    throw new Error('Padded data length must be a multiple of block size')
-  }
-
-  // Get the padding value from the last byte
-  const paddingValue = data[data.length - 1]
-
-  // Validate padding value
-  if (paddingValue === 0 || paddingValue > blockSize) {
-    throw new Error('Invalid PKCS#7 padding value')
-  }
-
-  // Verify all padding bytes are correct
-  for (let i = data.length - paddingValue; i < data.length; i++) {
-    if (data[i] !== paddingValue) {
-      throw new Error('Invalid PKCS#7 padding')
-    }
-  }
-
-  // Return data without padding
-  return data.slice(0, data.length - paddingValue)
-}
-
-function _aesCbcEncrypt(key, iv, plaintext) {
-  const cipher = cbc(key, iv)
-  // Noble does NOT auto-pad on encrypt, so we must pad manually
-  const padded = _pkcs7Pad(plaintext)
-  return cipher.encrypt(padded)
-}
-
-function _aesCbcDecrypt(key, iv, ciphertext) {
-  const cipher = cbc(key, iv)
-  const result = cipher.decrypt(ciphertext)
-
-  // Check if padding is still present (seems to vary, weirdly)
-  const lastByte = result[result.length - 1]
-  if (lastByte > 0 && lastByte <= 16) {
-    // Padding might still be there, try to unpad
-    try {
-      return _pkcs7Unpad(result)
-    } catch (e) {
-      // If unpadding fails, return as-is (already unpadded)
-      return result
-    }
-  }
-
-  return result
-}
-
-function _ed25519Sign(data, privateKey) {
-  return ed25519.sign(data, privateKey)
-}
-
-function _ed25519Validate(publicKey, signature, message) {
-  try {
-    return ed25519.verify(signature, message, publicKey)
-  } catch (e) {
-    return false
-  }
-}
-
-function _x25519Exchange(privateKey, publicKey) {
-  return x25519.getSharedSecret(privateKey, publicKey)
-}
-
-// Identity functions
-export function identityCreate() {
-  const encryptPrivate = randomBytes(32)
-  const encryptPublic = x25519.getPublicKey(encryptPrivate)
-  const signPrivate = randomBytes(32)
-  const signPublic = ed25519.getPublicKey(signPrivate)
-  return {
-    public: { encrypt: encryptPublic, sign: signPublic },
-    private: { encrypt: encryptPrivate, sign: signPrivate }
-  }
-}
-
-export function getIdentityFromBytes(privateIdentityBytes) {
-  if (privateIdentityBytes.length !== 64) {
-    throw new Error('Private identity must be 64 bytes')
-  }
-
-  const encryptPrivate = privateIdentityBytes.slice(0, 32)
-  const signPrivate = privateIdentityBytes.slice(32, 64)
-
-  const encryptPublic = x25519.getPublicKey(encryptPrivate)
-  const signPublic = ed25519.getPublicKey(signPrivate)
-
-  return {
-    public: {
-      encrypt: encryptPublic,
-      sign: signPublic
-    },
-    private: {
-      encrypt: encryptPrivate,
-      sign: signPrivate
-    }
-  }
-}
-
-// Ratchet functions
-export function ratchetCreateNew() {
-  return randomBytes(32)
-}
-
-export function ratchetGetPublic(privateRatchet) {
-  return x25519.getPublicKey(privateRatchet)
-}
-
-// Destination hash
 export function getDestinationHash(identity, appName, ...aspects) {
   const identityData = new Uint8Array(64)
   identityData.set(identity.public.encrypt)
   identityData.set(identity.public.sign, 32)
-  const identityHash = _sha256(identityData).slice(0, 16)
-
+  const identityHash = sha256(identityData).slice(0, 16)
   let fullName = appName
   for (const aspect of aspects) {
     fullName += '.' + aspect
   }
-
-  const nameHash = _sha256(encoder.encode(fullName)).slice(0, 10)
-
+  const nameHash = sha256(encoder.encode(fullName)).slice(0, 10)
   const addrHashMaterial = new Uint8Array(26)
   addrHashMaterial.set(nameHash)
   addrHashMaterial.set(identityHash, 10)
-
-  return _sha256(addrHashMaterial).slice(0, 16)
+  return sha256(addrHashMaterial).slice(0, 16)
 }
 
-// Message functions
 export function getMessageId(packet) {
   const headerType = (packet.raw[0] >> 6) & 0b11
   const hashablePart = new Uint8Array(packet.raw.length - (headerType === 1 ? 18 : 2) + 1)
   hashablePart[0] = packet.raw[0] & 0b00001111
-
   if (headerType === 1) {
     hashablePart.set(packet.raw.slice(18), 1)
   } else {
     hashablePart.set(packet.raw.slice(2), 1)
   }
-
-  return _sha256(hashablePart)
+  return sha256(hashablePart)
 }
 
-// ============================================================================
-// PACKET ENCODING/DECODING
-// ============================================================================
-
-export function encodePacket(packet) {
+export function packetPack(packet) {
   let headerByte = 0
 
   // Build header byte
@@ -281,7 +107,6 @@ export function encodePacket(packet) {
   if (packet.headerType) headerByte |= 0b01000000
   if (packet.contextFlag) headerByte |= 0b00100000
   if (packet.propagationType) headerByte |= 0b00010000
-  // headerByte |= (packet.destinationType || 0) & 0b00001100
   headerByte |= ((packet.destinationType || 0) << 2) & 0b00001100
   headerByte |= (packet.packetType || 0) & 0b00000011
 
@@ -315,7 +140,7 @@ export function encodePacket(packet) {
   return result
 }
 
-export function decodePacket(packetBytes) {
+export function packetUnpack(packetBytes) {
   const packet = {
     raw: packetBytes,
     ifacFlag: Boolean(packetBytes[0] & 0b10000000),
@@ -351,17 +176,13 @@ export function decodePacket(packetBytes) {
   return packet
 }
 
-// ============================================================================
-// ANNOUNCE
-// ============================================================================
-
 export function buildAnnounce(identity, destination, fullName = 'lxmf.delivery', ratchetPub = null, appData = null) {
-  const nameHash = _sha256(encoder.encode(fullName)).slice(0, 10)
+  const nameHash = sha256(encoder.encode(fullName)).slice(0, 10)
   const randomHash = randomBytes(10)
 
   // Determine effective ratchet and context
   let ratchetForSigning, contextVal, hasExplicitRatchet
-  if (ratchetPub === null || arraysEqual(ratchetPub, identity.public.encrypt)) {
+  if (ratchetPub === null || equalBytes(ratchetPub, identity.public.encrypt)) {
     // No explicit ratchet - use empty bytes for signing
     ratchetForSigning = new Uint8Array(0)
     contextVal = 0
@@ -380,29 +201,29 @@ export function buildAnnounce(identity, destination, fullName = 'lxmf.delivery',
   }
 
   // Build signed data
-  const publicKeys = concatArrays([identity.public.encrypt, identity.public.sign])
-  const signedData = concatArrays([
+  const publicKeys = concatBytes(identity.public.encrypt, identity.public.sign)
+  const signedData = concatBytes(
     destination,
     publicKeys,
     nameHash,
     randomHash,
     ratchetForSigning, // Empty or explicit ratchet
     appDataBytes
-  ])
+  )
 
-  const signature = _ed25519Sign(signedData, identity.private.sign)
+  const signature = ed25519Sign(signedData, identity.private.sign)
 
   // Build payload (data part of packet)
   let payload
   if (hasExplicitRatchet) {
     // Include explicit ratchet in payload
-    payload = concatArrays([publicKeys, nameHash, randomHash, ratchetPub, signature, appDataBytes])
+    payload = concatBytes(publicKeys, nameHash, randomHash, ratchetPub, signature, appDataBytes)
   } else {
     // No explicit ratchet in payload
-    payload = concatArrays([publicKeys, nameHash, randomHash, signature, appDataBytes])
+    payload = concatBytes(publicKeys, nameHash, randomHash, signature, appDataBytes)
   }
 
-  return encodePacket({
+  return packetPack({
     destinationHash: destination,
     packetType: PACKET_ANNOUNCE,
     destinationType: 0,
@@ -449,18 +270,14 @@ export function announceParse(packet) {
   announce.appData = data.length > offset ? data.slice(offset) : new Uint8Array(0)
 
   // Build signed data for verification
-  const signedData = concatArrays([packet.destinationHash, publicKey, announce.nameHash, announce.randomHash, ratchetForSigning, announce.appData])
+  const signedData = concatBytes(packet.destinationHash, publicKey, announce.nameHash, announce.randomHash, ratchetForSigning, announce.appData)
 
   // Verify signature
-  announce.valid = _ed25519Validate(announce.keyPubSignature, announce.signature, signedData)
+  announce.valid = ed25519Validate(announce.keyPubSignature, announce.signature, signedData)
   announce.destinationHash = packet.destinationHash
 
   return announce
 }
-
-// ============================================================================
-// PROOF
-// ============================================================================
 
 export function buildProof(identity, packet, messageId = null) {
   if (!messageId) {
@@ -468,12 +285,12 @@ export function buildProof(identity, packet, messageId = null) {
   }
 
   // Sign the full message ID
-  const signature = _ed25519Sign(messageId, identity.private.sign)
+  const signature = ed25519Sign(messageId, identity.private.sign)
 
   // Explicit proof: full hash + signature (no version byte)
   const proofData = new Uint8Array([...messageId, ...signature])
 
-  return encodePacket({
+  return packetPack({
     destinationHash: messageId.slice(0, 16), // First 16 bytes of message ID
     packetType: PACKET_PROOF,
     destinationType: 0,
@@ -497,53 +314,49 @@ export function proofValidate(packet, identity, fullPacketHash) {
     }
 
     // Verify the signature
-    return _ed25519Validate(identity.public.sign, signature, fullPacketHash)
+    return ed25519Validate(identity.public.sign, signature, fullPacketHash)
   } else if (packet.data.length === 64) {
     // Implicit proof: just 64-byte signature
     const signature = packet.data
-    return _ed25519Validate(identity.public.sign, signature, fullPacketHash)
+    return ed25519Validate(identity.public.sign, signature, fullPacketHash)
   } else if (packet.data.length === 65) {
     // Old format: version byte + 64-byte signature
     const signature = packet.data.slice(1, 65)
-    return _ed25519Validate(identity.public.sign, signature, fullPacketHash)
+    return ed25519Validate(identity.public.sign, signature, fullPacketHash)
   } else {
     return false
   }
 }
 
-// ============================================================================
-// DATA (Encryption/Decryption)
-// ============================================================================
-
 export function buildData(identity, recipientAnnounce, plaintext) {
   // Calculate recipient identity hash for HKDF
-  const recipientIdentityData = concatArrays([recipientAnnounce.keyPubEncrypt, recipientAnnounce.keyPubSignature])
-  const recipientIdentityHash = _sha256(recipientIdentityData).slice(0, 16)
+  const recipientIdentityData = concatBytes(recipientAnnounce.keyPubEncrypt, recipientAnnounce.keyPubSignature)
+  const recipientIdentityHash = sha256(recipientIdentityData).slice(0, 16)
 
   // Generate ephemeral keypair
   const ephemeralKey = randomBytes(32)
-  const ephemeralPub = x25519.getPublicKey(ephemeralKey)
+  const ephemeralPub = x25519PublicForPrivate(ephemeralKey)
 
   // Perform X25519 key exchange with recipient's ratchet
-  const sharedKey = _x25519Exchange(ephemeralKey, recipientAnnounce.ratchetPub)
+  const sharedKey = x25519Exchange(ephemeralKey, recipientAnnounce.ratchetPub)
 
   // Derive encryption and signing keys
-  const derivedKey = _hkdf(64, sharedKey, recipientIdentityHash, new Uint8Array(0))
+  const derivedKey = hkdf(64, sharedKey, recipientIdentityHash, new Uint8Array(0))
   const signingKey = derivedKey.slice(0, 32)
   const encryptionKey = derivedKey.slice(32, 64)
 
   // Encrypt the plaintext
   const iv = randomBytes(16)
-  const ciphertext = _aesCbcEncrypt(encryptionKey, iv, plaintext)
+  const ciphertext = aesCbcEncrypt(encryptionKey, iv, plaintext)
 
   // Create HMAC over IV + ciphertext
-  const signedData = concatArrays([iv, ciphertext])
-  const hmac = _hmacSha256(signingKey, signedData)
+  const signedData = concatBytes(iv, ciphertext)
+  const hmac = hmacSha256(signingKey, signedData)
 
   // Build token: ephemeralPub + IV + ciphertext + HMAC
-  const token = concatArrays([ephemeralPub, iv, ciphertext, hmac])
+  const token = concatBytes(ephemeralPub, iv, ciphertext, hmac)
 
-  return encodePacket({
+  return packetPack({
     destinationHash: recipientAnnounce.destinationHash,
     packetType: PACKET_DATA,
     destinationType: 0,
@@ -554,68 +367,66 @@ export function buildData(identity, recipientAnnounce, plaintext) {
   })
 }
 
-export function messageDecrypt(packet, identity, ratchets = null) {
-  const data = packet.data
+export function messageDecrypt(packet, identity, ratchets = []) {
+  const identityData = new Uint8Array(64)
+  identityData.set(identity.public.encrypt)
+  identityData.set(identity.public.sign, 32)
+  const identityHash = sha256(identityData).slice(0, 16)
+  const ciphertextToken = packet.data
 
-  if (data.length < 81) {
+  if (!ciphertextToken || ciphertextToken.length <= 49) {
     return null
   }
 
-  const identityData = concatArrays([identity.public.encrypt, identity.public.sign])
-  const identityHash = _sha256(identityData).slice(0, 16)
+  // Fix: slice(0, 32) instead of slice(1, 33)
+  const peerPubBytes = ciphertextToken.slice(0, 32)
+  const ciphertext = ciphertextToken.slice(32)
 
-  const ephemeralPub = data.slice(0, 32)
-  const ciphertext = data.slice(32)
+  // Fix: use identity.private.encrypt for key exchange
+  ratchets.push(identity.private.encrypt)
 
-  // Try decryption with ratchets first
-  if (ratchets && Array.isArray(ratchets)) {
-    for (let i = 0; i < ratchets.length; i++) {
-      const result = tryDecrypt(ephemeralPub, ciphertext, ratchets[i], identityHash, `ratchet ${i}`)
-      if (result) {
-        return result
+  for (const ratchet of ratchets) {
+    if (ratchet.length !== 32) {
+      continue
+    }
+
+    try {
+      const sharedKey = x25519Exchange(ratchet, peerPubBytes)
+      const derivedKey = hkdf(64, sharedKey, identityHash, new Uint8Array(0))
+      const signingKey = derivedKey.slice(0, 32)
+      const encryptionKey = derivedKey.slice(32)
+
+      if (ciphertext.length <= 48) {
+        continue
       }
+
+      const receivedHmac = ciphertext.slice(-32)
+      const signedData = ciphertext.slice(0, -32)
+      const expectedHmac = hmacSha256(signingKey, signedData)
+
+      if (!equalBytes(receivedHmac, expectedHmac)) {
+        continue
+      }
+
+      const iv = ciphertext.slice(0, 16)
+      const ciphertextData = ciphertext.slice(16, -32)
+
+      const plaintext = aesCbcDecrypt(encryptionKey, iv, ciphertextData)
+      return plaintext
+    } catch (e) {
+      console.error(e)
+      continue
     }
   }
 
-  // Try with identity private key
-  const result = tryDecrypt(ephemeralPub, ciphertext, identity.private.encrypt, identityHash, 'identity')
-  return result
+  return null
 }
-
-function tryDecrypt(ephemeralPub, ciphertext, privateKey, identityHash) {
-  try {
-    const sharedKey = _x25519Exchange(privateKey, ephemeralPub)
-    const derivedKey = _hkdf(64, sharedKey, identityHash, new Uint8Array(0))
-    const signingKey = derivedKey.slice(0, 32)
-    const encryptionKey = derivedKey.slice(32, 64)
-
-    if (ciphertext.length < 48) return null
-
-    const receivedHmac = ciphertext.slice(-32)
-    const signedData = ciphertext.slice(0, -32)
-    const expectedHmac = _hmacSha256(signingKey, signedData)
-
-    if (!arraysEqual(receivedHmac, expectedHmac)) return null
-
-    const iv = signedData.slice(0, 16)
-    const actualCiphertext = signedData.slice(16)
-
-    return _aesCbcDecrypt(encryptionKey, iv, actualCiphertext)
-  } catch (e) {
-    return null
-  }
-}
-
-// ============================================================================
-// LXMF higher-level DATA functions
-// ============================================================================
 
 export function decodeLxmfMessage(plaintext) {
   const senderHash = plaintext.slice(0, 16)
   const signature = plaintext.slice(16, 80)
   const payload = plaintext.slice(80)
-  const [ts, title, content, fields] = unpack(payload)
-
+  const [ts, title, content, fields] = msgunpack(payload)
   return {
     ts,
     senderHash,
@@ -629,28 +440,22 @@ export function decodeLxmfMessage(plaintext) {
 
 export function validateLxmfMessage(decodedMessage, myDest, senderPublicSignKey) {
   const hashedPart = new Uint8Array([...myDest, ...decodedMessage.senderHash, ...decodedMessage.payload])
-  const messageHash = _sha256(hashedPart)
+  const messageHash = sha256(hashedPart)
   const signedData = new Uint8Array([...hashedPart, ...messageHash])
-
-  return _ed25519Validate(senderPublicSignKey, decodedMessage.signature, signedData)
+  return ed25519Validate(senderPublicSignKey, decodedMessage.signature, signedData)
 }
 
-function _encodeLxmfMessage(senderIdentity, senderDest, recipientDest, message) {
+export function encodeLxmfMessage(senderIdentity, senderDest, recipientAnnounce, message) {
+  const recipientDest = recipientAnnounce.destinationHash
   let { timestamp, title, content, ...fields } = message
   timestamp = timestamp || Math.floor(Date.now() / 1000)
   title = title ? encoder.encode(title) : new Uint8Array(0)
   content = content ? encoder.encode(content) : new Uint8Array(0)
-  const payload = pack([timestamp, title, content, fields])
+  const payload = msgpack([timestamp, title, content, fields])
   const hashedPart = new Uint8Array([...recipientDest, ...senderDest, ...payload])
-  const messageHash = _sha256(hashedPart)
+  const messageHash = sha256(hashedPart)
   const signedData = new Uint8Array([...hashedPart, ...messageHash])
-  const signature = _ed25519Sign(signedData, senderIdentity.private.sign)
+  const signature = ed25519Sign(signedData, senderIdentity.private.sign)
   const lxmfMessage = new Uint8Array([...senderDest, ...signature, ...payload])
-  return lxmfMessage
-}
-
-export function encodeLxmfMessage(senderIdentity, senderDest, recipientAnnounce, message, recipientMessageHash = null) {
-  const recipientDest = recipientMessageHash || recipientAnnounce.destinationHash
-  const lxmfMessage = _encodeLxmfMessage(senderIdentity, senderDest, recipientDest, message)
   return buildData(senderIdentity, recipientAnnounce, lxmfMessage)
 }

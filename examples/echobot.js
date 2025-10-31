@@ -1,6 +1,6 @@
 // this is a simple echo-server that runs over websocket
 
-import { _sha256, identityCreate, getDestinationHash, ratchetCreateNew, ratchetGetPublic, decodePacket, buildAnnounce, proofValidate, buildProof, validateLxmfMessage, decodeLxmfMessage, encodeLxmfMessage, messageDecrypt, getMessageId, announceParse, PACKET_ANNOUNCE, PACKET_PROOF, PACKET_DATA } from '../src/index.js'
+import { identityCreate, getDestinationHash, ratchetCreateNew, ratchetGetPublic, packetUnpack, buildAnnounce, proofValidate, buildProof, validateLxmfMessage, decodeLxmfMessage, encodeLxmfMessage, messageDecrypt, getMessageId, announceParse, PACKET_ANNOUNCE, PACKET_PROOF, PACKET_DATA } from '../src/index.js'
 import { bytesToHex } from '@noble/curves/utils.js'
 
 const uri = 'wss://signal.konsumer.workers.dev/ws/reticulum'
@@ -24,7 +24,7 @@ async function periodicAnnounce(websocket, interval = 30000) {
   while (true) {
     try {
       console.log(`Announcing ${bytesToHex(meDest)}`)
-      const announceBytes = buildAnnounce(me, meDest, 'lxmf.delivery', ratchetPub)
+      const announceBytes = buildAnnounce(me, meDest, 'lxmf.delivery', me.public.encrypt)
       websocket.send(announceBytes)
       await new Promise((resolve) => setTimeout(resolve, interval))
     } catch (e) {
@@ -105,7 +105,8 @@ async function handleData(packet, websocket) {
 async function handleIncoming(websocket) {
   websocket.on('message', async (data) => {
     try {
-      const packet = decodePacket(new Uint8Array(data))
+      const packet = packetUnpack(new Uint8Array(data))
+      console.log(packet)
       if (packet.packetType === PACKET_ANNOUNCE) {
         await handleAnnounce(packet)
       } else if (packet.packetType === PACKET_PROOF) {

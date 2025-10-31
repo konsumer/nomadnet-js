@@ -5,7 +5,7 @@ import assert from 'node:assert'
 import { hexToBytes, bytesToHex } from '@noble/curves/utils.js'
 import { unpack } from 'msgpackr'
 
-import { getDestinationHash, getIdentityFromBytes, ratchetGetPublic, decodePacket, decodeLxmfMessage, announceParse, proofValidate, messageDecrypt, getMessageId, PACKET_DATA, PACKET_ANNOUNCE, PACKET_PROOF } from '../src/index.js'
+import { getDestinationHash, getIdentityFromBytes, ratchetGetPublic, packetUnpack, decodeLxmfMessage, announceParse, proofValidate, messageDecrypt, getMessageId, PACKET_DATA, PACKET_ANNOUNCE, PACKET_PROOF } from '../src/index.js'
 
 export const keys = {
   '072ec44973a8dee8e28d230fb4af8fe4': hexToBytes('205131cb9672eaec8a582e8e018307f2428c4aac5e383f12e94939e672b931677763c7398d0b9cb6ef1369d023d8af10b85d80f6579c55a6f528953265c15313'),
@@ -61,7 +61,7 @@ describe('Identity', () => {
 
 describe('ANNOUNCE', () => {
   test('072ec44973a8dee8e28d230fb4af8fe4', () => {
-    const packet = decodePacket(packets[0])
+    const packet = packetUnpack(packets[0])
     assert.equal(packet.packetType, PACKET_ANNOUNCE)
     assert.equal(bytesToHex(packet.destinationHash), '072ec44973a8dee8e28d230fb4af8fe4')
     const announce = announceParse(packet)
@@ -69,7 +69,7 @@ describe('ANNOUNCE', () => {
   })
 
   test('76a93cda889a8c0a88451e02d53fd8b9', () => {
-    const packet = decodePacket(packets[1])
+    const packet = packetUnpack(packets[1])
     assert.equal(packet.packetType, PACKET_ANNOUNCE)
     assert.equal(bytesToHex(packet.destinationHash), '76a93cda889a8c0a88451e02d53fd8b9')
     const announce = announceParse(packet)
@@ -79,7 +79,7 @@ describe('ANNOUNCE', () => {
   // these were problematc in some clients (from other networks)
 
   test('7d62e355cc90ec4e79569d33a8ad6c6b', () => {
-    const packet = decodePacket(packets[6])
+    const packet = packetUnpack(packets[6])
     assert.equal(packet.packetType, PACKET_ANNOUNCE)
     assert.equal(bytesToHex(packet.destinationHash), '7d62e355cc90ec4e79569d33a8ad6c6b')
     const announce = announceParse(packet)
@@ -87,7 +87,7 @@ describe('ANNOUNCE', () => {
   })
 
   test('acd4eef4901f2b7c69e761dc8781ed4c', () => {
-    const packet = decodePacket(packets[7])
+    const packet = packetUnpack(packets[7])
     assert.equal(packet.packetType, PACKET_ANNOUNCE)
     assert.equal(bytesToHex(packet.destinationHash), 'acd4eef4901f2b7c69e761dc8781ed4c')
     const announce = announceParse(packet)
@@ -97,7 +97,7 @@ describe('ANNOUNCE', () => {
 
 describe('DATA', () => {
   test('2831d76f1a8035638505c132fe5818c1 (A -> B)', () => {
-    const packet = decodePacket(packets[2])
+    const packet = packetUnpack(packets[2])
     assert.equal(packet.packetType, PACKET_DATA)
 
     // it's to Client B
@@ -117,7 +117,7 @@ describe('DATA', () => {
   })
 
   test('d7c0e833f0cbde9f9133cd9e7d508b1a (B -> A)', () => {
-    const packet = decodePacket(packets[4])
+    const packet = packetUnpack(packets[4])
     assert.equal(packet.packetType, PACKET_DATA)
 
     // it's to Client A
@@ -139,7 +139,7 @@ describe('DATA', () => {
 
 describe('PROOF', () => {
   test('2831d76f1a8035638505c132fe5818c1 (A -> B)', () => {
-    const packet = decodePacket(packets[3])
+    const packet = packetUnpack(packets[3])
     assert.equal(packet.packetType, PACKET_PROOF)
     assert.equal(bytesToHex(packet.destinationHash), '2831d76f1a8035638505c132fe5818c1')
 
@@ -157,7 +157,7 @@ describe('PROOF', () => {
   })
 
   test('d7c0e833f0cbde9f9133cd9e7d508b1a (B -> A)', () => {
-    const packet = decodePacket(packets[5])
+    const packet = packetUnpack(packets[5])
     assert.equal(packet.packetType, PACKET_PROOF)
     assert.equal(bytesToHex(packet.destinationHash), 'd7c0e833f0cbde9f9133cd9e7d508b1a')
 
@@ -177,7 +177,7 @@ describe('PROOF', () => {
 
 describe('LXMF higher-level DATA functions: decode', () => {
   test('2831d76f1a8035638505c132fe5818c1 (A -> B)', () => {
-    const packet = decodePacket(packets[2])
+    const packet = packetUnpack(packets[2])
     assert.equal(packet.packetType, PACKET_DATA)
 
     // it's to Client B
@@ -194,7 +194,7 @@ describe('LXMF higher-level DATA functions: decode', () => {
   })
 
   test('d7c0e833f0cbde9f9133cd9e7d508b1a (B -> A)', () => {
-    const packet = decodePacket(packets[4])
+    const packet = packetUnpack(packets[4])
     assert.equal(packet.packetType, PACKET_DATA)
 
     // it's to Client A

@@ -3,12 +3,12 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert'
 
-import { identityCreate, getDestinationHash, ratchetCreateNew, ratchetGetPublic, encodePacket, encodeLxmfMessage, decodePacket, decodeLxmfMessage, buildAnnounce, announceParse, buildProof, proofValidate, buildData, messageDecrypt, getMessageId } from '../src/index.js'
+import { identityCreate, getDestinationHash, ratchetCreateNew, ratchetGetPublic, packetPack, encodeLxmfMessage, packetUnpack, decodeLxmfMessage, buildAnnounce, announceParse, buildProof, proofValidate, buildData, messageDecrypt, getMessageId } from '../src/index.js'
 
 const encoder = new TextEncoder()
 
 describe('Packet Encoding/Decoding', () => {
-  test('encodePacket and decodePacket - single header', () => {
+  test('packetPack and packetUnpack - single header', () => {
     const destHash = new Uint8Array(16).fill(0xaa)
     const data = encoder.encode('hello')
 
@@ -22,8 +22,8 @@ describe('Packet Encoding/Decoding', () => {
       data
     }
 
-    const encoded = encodePacket(packet)
-    const decoded = decodePacket(encoded)
+    const encoded = packetPack(packet)
+    const decoded = packetUnpack(encoded)
 
     assert.deepEqual(decoded.destinationHash, destHash)
     assert.equal(decoded.packetType, 0)
@@ -33,7 +33,7 @@ describe('Packet Encoding/Decoding', () => {
     assert.equal(decoded.headerType, false)
   })
 
-  test('encodePacket and decodePacket - double header', () => {
+  test('packetPack and packetUnpack - double header', () => {
     const destHash = new Uint8Array(16).fill(0xaa)
     const sourceHash = new Uint8Array(16).fill(0xbb)
     const data = encoder.encode('test')
@@ -50,8 +50,8 @@ describe('Packet Encoding/Decoding', () => {
       data
     }
 
-    const encoded = encodePacket(packet)
-    const decoded = decodePacket(encoded)
+    const encoded = packetPack(packet)
+    const decoded = packetUnpack(encoded)
 
     assert.deepEqual(decoded.destinationHash, destHash)
     assert.deepEqual(decoded.sourceHash, sourceHash)
@@ -110,7 +110,7 @@ describe('Announce', () => {
     const destination = getDestinationHash(identity, 'lxmf.delivery')
 
     const announceBytes = buildAnnounce(identity, destination, 'lxmf.delivery')
-    const packet = decodePacket(announceBytes)
+    const packet = packetUnpack(announceBytes)
 
     const announce = announceParse(packet)
 
@@ -126,7 +126,7 @@ describe('Announce', () => {
     const appData = encoder.encode('test data')
 
     const announceBytes = buildAnnounce(identity, destination, 'lxmf.delivery', null, appData)
-    const packet = decodePacket(announceBytes)
+    const packet = packetUnpack(announceBytes)
     const announce = announceParse(packet)
 
     assert.ok(announce.valid)
@@ -138,7 +138,7 @@ describe('Announce', () => {
     const destination = getDestinationHash(identity, 'lxmf.delivery')
 
     const announceBytes = buildAnnounce(identity, destination, 'lxmf.delivery')
-    const packet = decodePacket(announceBytes)
+    const packet = packetUnpack(announceBytes)
 
     // Corrupt the signature
     packet.data[100] ^= 0xff
@@ -163,12 +163,12 @@ describe('Proof', () => {
       contextFlag: false,
       data: encoder.encode('test')
     }
-    const dataBytes = encodePacket(dataPacket)
-    const dataParsed = decodePacket(dataBytes)
+    const dataBytes = packetPack(dataPacket)
+    const dataParsed = packetUnpack(dataBytes)
 
     const messageId = getMessageId(dataParsed)
     const proofBytes = buildProof(identity, dataParsed, messageId)
-    const proofPacket = decodePacket(proofBytes)
+    const proofPacket = packetUnpack(proofBytes)
 
     assert.equal(proofPacket.packetType, 3) // PACKET_PROOF
     assert.ok(proofPacket.data.length >= 64)
@@ -187,12 +187,12 @@ describe('Proof', () => {
       contextFlag: false,
       data: encoder.encode('test')
     }
-    const dataBytes = encodePacket(dataPacket)
-    const dataParsed = decodePacket(dataBytes)
+    const dataBytes = packetPack(dataPacket)
+    const dataParsed = packetUnpack(dataBytes)
     const messageId = getMessageId(dataParsed)
 
     const proofBytes = buildProof(identity, dataParsed, messageId)
-    const proofPacket = decodePacket(proofBytes)
+    const proofPacket = packetUnpack(proofBytes)
 
     const isValid = proofValidate(proofPacket, identity, messageId)
     assert.ok(isValid)
@@ -212,12 +212,12 @@ describe('Proof', () => {
       contextFlag: false,
       data: encoder.encode('test')
     }
-    const dataBytes = encodePacket(dataPacket)
-    const dataParsed = decodePacket(dataBytes)
+    const dataBytes = packetPack(dataPacket)
+    const dataParsed = packetUnpack(dataBytes)
     const messageId = getMessageId(dataParsed)
 
     const proofBytes = buildProof(identity1, dataParsed, messageId)
-    const proofPacket = decodePacket(proofBytes)
+    const proofPacket = packetUnpack(proofBytes)
 
     const isValid = proofValidate(proofPacket, identity2, messageId)
     assert.equal(isValid, false)
@@ -232,12 +232,12 @@ describe('Data Encryption/Decryption', () => {
 
     // Create recipient announce
     const announceBytes = buildAnnounce(recipient, recipientDest, 'lxmf.delivery')
-    const announcePacket = decodePacket(announceBytes)
+    const announcePacket = packetUnpack(announceBytes)
     const recipientAnnounce = announceParse(announcePacket)
 
     const plaintext = encoder.encode('Hello, World!')
     const dataBytes = buildData(sender, recipientAnnounce, plaintext)
-    const dataPacket = decodePacket(dataBytes)
+    const dataPacket = packetUnpack(dataBytes)
 
     const decrypted = messageDecrypt(dataPacket, recipient)
     assert.deepEqual(decrypted, plaintext)
@@ -252,12 +252,12 @@ describe('Data Encryption/Decryption', () => {
 
     // Create recipient announce with ratchet
     const announceBytes = buildAnnounce(recipient, recipientDest, 'lxmf.delivery', ratchetPub)
-    const announcePacket = decodePacket(announceBytes)
+    const announcePacket = packetUnpack(announceBytes)
     const recipientAnnounce = announceParse(announcePacket)
 
     const plaintext = encoder.encode('Secret message')
     const dataBytes = buildData(sender, recipientAnnounce, plaintext)
-    const dataPacket = decodePacket(dataBytes)
+    const dataPacket = packetUnpack(dataBytes)
 
     // Try decrypting with ratchet
     const decrypted = messageDecrypt(dataPacket, recipient, [ratchetPriv])
@@ -271,12 +271,12 @@ describe('Data Encryption/Decryption', () => {
     const recipientDest = getDestinationHash(recipient, 'lxmf.delivery')
 
     const announceBytes = buildAnnounce(recipient, recipientDest, 'lxmf.delivery')
-    const announcePacket = decodePacket(announceBytes)
+    const announcePacket = packetUnpack(announceBytes)
     const recipientAnnounce = announceParse(announcePacket)
 
     const plaintext = encoder.encode('Secret')
     const dataBytes = buildData(sender, recipientAnnounce, plaintext)
-    const dataPacket = decodePacket(dataBytes)
+    const dataPacket = packetUnpack(dataBytes)
 
     const decrypted = messageDecrypt(dataPacket, wrongRecipient)
     assert.equal(decrypted, null)
@@ -288,12 +288,12 @@ describe('Data Encryption/Decryption', () => {
     const recipientDest = getDestinationHash(recipient, 'lxmf.delivery')
 
     const announceBytes = buildAnnounce(recipient, recipientDest, 'lxmf.delivery')
-    const announcePacket = decodePacket(announceBytes)
+    const announcePacket = packetUnpack(announceBytes)
     const recipientAnnounce = announceParse(announcePacket)
 
     const plaintext = encoder.encode('Test')
     const dataBytes = buildData(sender, recipientAnnounce, plaintext)
-    const dataPacket = decodePacket(dataBytes)
+    const dataPacket = packetUnpack(dataBytes)
 
     // Corrupt the data
     dataPacket.data[50] ^= 0xff
@@ -317,8 +317,8 @@ describe('Message ID', () => {
       contextFlag: false,
       data: encoder.encode('test')
     }
-    const packetBytes = encodePacket(packet)
-    const parsed = decodePacket(packetBytes)
+    const packetBytes = packetPack(packet)
+    const parsed = packetUnpack(packetBytes)
 
     const messageId = getMessageId(parsed)
     assert.equal(messageId.length, 32)
@@ -337,8 +337,8 @@ describe('Message ID', () => {
       contextFlag: false,
       data: encoder.encode('test')
     }
-    const packetBytes = encodePacket(packet)
-    const parsed = decodePacket(packetBytes)
+    const packetBytes = packetPack(packet)
+    const parsed = packetUnpack(packetBytes)
 
     const id1 = getMessageId(parsed)
     const id2 = getMessageId(parsed)
@@ -353,14 +353,14 @@ describe('LXMF higher-level DATA functions', () => {
 
     const recipientIdentity = identityCreate()
     const recipientDest = getDestinationHash(recipientIdentity, 'lxmf.delivery')
-    const recipientAnnounce = announceParse(decodePacket(buildAnnounce(recipientIdentity, recipientDest, 'lxmf.delivery')))
+    const recipientAnnounce = announceParse(packetUnpack(buildAnnounce(recipientIdentity, recipientDest, 'lxmf.delivery')))
 
     const messageIn = encodeLxmfMessage(senderIdentity, senderDest, recipientAnnounce, {
       content: 'Hello world'
     })
     assert.ok(messageIn.length)
 
-    const packet = decodePacket(messageIn)
+    const packet = packetUnpack(messageIn)
     const messageOut = decodeLxmfMessage(messageDecrypt(packet, recipientIdentity))
     assert.deepEqual(senderDest, messageOut.senderHash)
     assert.equal(messageOut.title, '')
@@ -378,14 +378,14 @@ describe('End-to-End', () => {
 
     // Bob announces
     const bobAnnounceBytes = buildAnnounce(bob, bobDest, 'lxmf.delivery')
-    const bobAnnouncePacket = decodePacket(bobAnnounceBytes)
+    const bobAnnouncePacket = packetUnpack(bobAnnounceBytes)
     const bobAnnounce = announceParse(bobAnnouncePacket)
     assert.ok(bobAnnounce.valid)
 
     // Alice sends data to Bob
     const message = encoder.encode('Hello Bob!')
     const dataBytes = buildData(alice, bobAnnounce, message)
-    const dataPacket = decodePacket(dataBytes)
+    const dataPacket = packetUnpack(dataBytes)
 
     // Bob decrypts
     const decrypted = messageDecrypt(dataPacket, bob)
@@ -394,7 +394,7 @@ describe('End-to-End', () => {
     // Bob sends proof
     const messageId = getMessageId(dataPacket)
     const proofBytes = buildProof(bob, dataPacket, messageId)
-    const proofPacket = decodePacket(proofBytes)
+    const proofPacket = packetUnpack(proofBytes)
 
     // Alice validates proof
     const isValid = proofValidate(proofPacket, bob, messageId)
