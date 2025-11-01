@@ -2,19 +2,32 @@
 
 import { describe, test } from 'node:test'
 import assert from 'node:assert'
-import { hexToBytes, bytesToHex } from '@noble/curves/utils.js'
-import { unpack } from 'msgpackr'
+import { hexToBytes, bytesToHex, msgunpack } from '../src/utils.js'
 
-import { getDestinationHash, getIdentityFromBytes, ratchetGetPublic, packetUnpack, decodeLxmfMessage, announceParse, proofValidate, messageDecrypt, getMessageId, PACKET_DATA, PACKET_ANNOUNCE, PACKET_PROOF } from '../src/index.js'
+// prettier-ignore
+import {
+  getDestinationHash,
+  publicIdentity,
+  publicRatchet,
+  parsePacket,
+  parseLxmf,
+  parseAnnounce,
+  parseProof,
+  messageDecrypt,
+  getMessageId,
+  PACKET_DATA,
+  PACKET_ANNOUNCE,
+  PACKET_PROOF
+} from '../src/index.js'
 
-export const keys = {
+const keys = {
   '072ec44973a8dee8e28d230fb4af8fe4': hexToBytes('205131cb9672eaec8a582e8e018307f2428c4aac5e383f12e94939e672b931677763c7398d0b9cb6ef1369d023d8af10b85d80f6579c55a6f528953265c15313'),
   '76a93cda889a8c0a88451e02d53fd8b9': hexToBytes('e8c5c096166f3554868de9133b0c55c7abf0318230860a142ea3f84a0aae7759142f6c0b84d9f537ceb2e8e9678fc9fb77caf91e2176278fb4c4f5c3eb7b48cd')
 }
 
-export const ratchets = [hexToBytes('205cb256c44d4d3939bdc02e2a9667de4214cbcc651bbdc0a318acf7ec68b066'), hexToBytes('28dd4da561a9bc0cb7d644a4487c01cbe32b01718a21f18905f5611b110a5c45')]
+const ratchets = [hexToBytes('205cb256c44d4d3939bdc02e2a9667de4214cbcc651bbdc0a318acf7ec68b066'), hexToBytes('28dd4da561a9bc0cb7d644a4487c01cbe32b01718a21f18905f5611b110a5c45')]
 
-export const packets = `
+const packets = `
 ANNOUNCE (072ec44973a8dee8e28d230fb4af8fe4):  2100072ec44973a8dee8e28d230fb4af8fe400a2b9b02fb4749fcf8458762d1be0ae67ff1caa47fb0a52f4c2bd6dd07860a738da50a87f884e6e64aaa70b44d20868144e3e26ffa001c60a7c797dbae5078ece6ec60bc318e2c0f0d90873408275530068de1039e2bb21108b2cbc900b476290ab7867441446db366a70fb8ed1448ca0e889bd65bad6d8654e72661ddc089b06495ab91a57afc5700e095f021aa8cec04f22ba55438efc3ab1e2a91b8d17bd259313f175dff040827fdf1111c88bef501676380b92c40e416e6f6e796d6f75732050656572c0
 ANNOUNCE (76a93cda889a8c0a88451e02d53fd8b9):  210076a93cda889a8c0a88451e02d53fd8b90071f199f04d3589ca083c66ff91baed628ee19517ef68eb209827df3a6785cf5b0af43fb0e168176370828fcdc199e5ae2b208b57cf65179ffa8f25733d9d40bc6ec60bc318e2c0f0d908149ad525040068de103b0df6d220011ce9da7559fbd620380501d9e19afce87a6d0c661412f3831cc915dbecabe89ef5a11a359d3757a85280c3ae68a8b6366ed4110be24a408dbe946b2815e0e89f8e49848978122b30e442af83b36cef11d3df69c34189156858560292c40e416e6f6e796d6f75732050656572c0
 DATA (76a93cda889a8c0a88451e02d53fd8b9):  000076a93cda889a8c0a88451e02d53fd8b900f549cccf8d574cb520c8f12ea6ea67c4f4ce34f301de611cd942acbfb6933f3f7a025d5b6d6184d04dd0279b8037f1c9c1c1c25defbdd5e62aa8fb04502101014a501b9235e62f823bbdfd4d85e7656d765802f115a01b57b823ae02cc94899ae3a0f94bf7c32f1a73c027e5c95e0dd94c72c833ea75951af517da665eff26bca45e90e2eaa18775e65799ea0b3a977645107850dbfe62bb1f3228b50ac6e775006c4f18d6f3a1474233dc9b13cd95f6a6f581ad0b85de7196ea606d393d35f1
@@ -41,172 +54,172 @@ const recipients = {}
 const decoder = new TextDecoder()
 
 describe('Identity', () => {
-  test('Client A: 072ec44973a8dee8e28d230fb4af8fe4', () => {
-    const clientA = getIdentityFromBytes(keys['072ec44973a8dee8e28d230fb4af8fe4'])
-    const clientA_addr = getDestinationHash(clientA, 'lxmf.delivery')
-    assert.equal(bytesToHex(clientA_addr), '072ec44973a8dee8e28d230fb4af8fe4')
-    recipients['072ec44973a8dee8e28d230fb4af8fe4'] = clientA
-  })
-
-  test('Client B: 76a93cda889a8c0a88451e02d53fd8b9', () => {
-    const clientA = getIdentityFromBytes(keys['76a93cda889a8c0a88451e02d53fd8b9'])
-
-    // either format is fine
-    const clientA_addr = getDestinationHash(clientA, 'lxmf', 'delivery')
-
-    assert.equal(bytesToHex(clientA_addr), '76a93cda889a8c0a88451e02d53fd8b9')
-    recipients['76a93cda889a8c0a88451e02d53fd8b9'] = clientA
-  })
+  for (const hash of Object.keys(keys)) {
+    test(`Client Identity ${hash}`, () => {
+      const clientPrivate = keys[hash]
+      const clientPublic = publicIdentity(keys[hash])
+      const clientHash = getDestinationHash(clientPublic, 'lxmf.delivery')
+      assert.equal(bytesToHex(clientHash), hash, 'address matches expected')
+      recipients[clientHash] = [clientPrivate, clientPublic]
+    })
+  }
 })
 
 describe('ANNOUNCE', () => {
   test('072ec44973a8dee8e28d230fb4af8fe4', () => {
-    const packet = packetUnpack(packets[0])
+    const packet = parsePacket(packets[0])
     assert.equal(packet.packetType, PACKET_ANNOUNCE)
     assert.equal(bytesToHex(packet.destinationHash), '072ec44973a8dee8e28d230fb4af8fe4')
-    const announce = announceParse(packet)
+    assert.equal(bytesToHex(packet.packetHash), 'e56755f8b7405b07c12a5c25d7b9b744ca296f7349768b335c78be868530b57d')
+    const announce = parseAnnounce(packet)
     assert.ok(announce.valid)
   })
-
   test('76a93cda889a8c0a88451e02d53fd8b9', () => {
-    const packet = packetUnpack(packets[1])
+    const packet = parsePacket(packets[1])
     assert.equal(packet.packetType, PACKET_ANNOUNCE)
     assert.equal(bytesToHex(packet.destinationHash), '76a93cda889a8c0a88451e02d53fd8b9')
-    const announce = announceParse(packet)
+    assert.equal(bytesToHex(packet.packetHash), '1d17ee4b806f343804567c56ac9d1204e06ef9bc0d1e44b3970f4138a8ef897b')
+    const announce = parseAnnounce(packet)
     assert.ok(announce.valid)
   })
 
-  // these were problematc in some clients (from other networks)
-
   test('7d62e355cc90ec4e79569d33a8ad6c6b', () => {
-    const packet = packetUnpack(packets[6])
+    const packet = parsePacket(packets[6])
     assert.equal(packet.packetType, PACKET_ANNOUNCE)
     assert.equal(bytesToHex(packet.destinationHash), '7d62e355cc90ec4e79569d33a8ad6c6b')
-    const announce = announceParse(packet)
+    assert.equal(bytesToHex(packet.packetHash), '108b781ce8b8029f8335fc4a4b8a295895c3878d36467bb88da7137c88d3c282')
+    const announce = parseAnnounce(packet)
     assert.ok(announce.valid)
   })
 
   test('acd4eef4901f2b7c69e761dc8781ed4c', () => {
-    const packet = packetUnpack(packets[7])
+    const packet = parsePacket(packets[7])
     assert.equal(packet.packetType, PACKET_ANNOUNCE)
     assert.equal(bytesToHex(packet.destinationHash), 'acd4eef4901f2b7c69e761dc8781ed4c')
-    const announce = announceParse(packet)
+    assert.equal(bytesToHex(packet.packetHash), 'b04b846ba727d26ea2a0911b37a2c18460d975fe6816f3718f4953b8d1a6ef77')
+    const announce = parseAnnounce(packet)
     assert.ok(announce.valid)
   })
 })
 
 describe('DATA', () => {
-  test.skip('2831d76f1a8035638505c132fe5818c1 (A -> B)', () => {
-    const packet = packetUnpack(packets[2])
+  test('2831d76f1a8035638505c132fe5818c1 (A -> B)', () => {
+    const packet = parsePacket(packets[2])
     assert.equal(packet.packetType, PACKET_DATA)
+    assert.equal(bytesToHex(packet.packetHash), '2831d76f1a8035638505c132fe5818c1d1d25869a973d35c197d669f0d5074d8')
 
     // it's to Client B
     assert.equal(bytesToHex(packet.destinationHash), '76a93cda889a8c0a88451e02d53fd8b9')
-    const identity = recipients['76a93cda889a8c0a88451e02d53fd8b9']
+    const identity = recipients[packet.destinationHash]
     assert.ok(identity)
 
-    const packetHashFull = getMessageId(packet) // 32-byte for validation
-    assert.equal(bytesToHex(packetHashFull), '2831d76f1a8035638505c132fe5818c1d1d25869a973d35c197d669f0d5074d8')
+    assert.equal(bytesToHex(packet.packetHash), '2831d76f1a8035638505c132fe5818c1d1d25869a973d35c197d669f0d5074d8')
 
-    const [ts, title, content] = unpack(messageDecrypt(packet, identity, ratchets).slice(80))
+    const [ts, title, content] = msgunpack(messageDecrypt(packet, identity[1], ratchets).slice(80))
     assert.equal(title.length, 0)
     assert.equal(decoder.decode(content), 'hello from A')
 
     // save for PROOF validation
-    sentPackets[bytesToHex(packetHashFull.slice(0, 16))] = { recipientHash: packet.destinationHash, packetHashFull }
+    sentPackets[packet.packetHash.slice(0, 16)] = { recipientHash: packet.destinationHash, packetHash: packet.packetHash }
   })
 
-  test.skip('d7c0e833f0cbde9f9133cd9e7d508b1a (B -> A)', () => {
-    const packet = packetUnpack(packets[4])
+  test('d7c0e833f0cbde9f9133cd9e7d508b1a (B -> A)', () => {
+    const packet = parsePacket(packets[4])
     assert.equal(packet.packetType, PACKET_DATA)
+    assert.equal(bytesToHex(packet.packetHash), 'd7c0e833f0cbde9f9133cd9e7d508b1a61d2c89410e9009e4474b9212ed0370a')
 
     // it's to Client A
     assert.equal(bytesToHex(packet.destinationHash), '072ec44973a8dee8e28d230fb4af8fe4')
-    const identity = recipients['072ec44973a8dee8e28d230fb4af8fe4']
+    const identity = recipients[packet.destinationHash]
     assert.ok(identity)
 
-    const packetHashFull = getMessageId(packet) // 32-byte for validation
-    assert.equal(bytesToHex(packetHashFull), 'd7c0e833f0cbde9f9133cd9e7d508b1a61d2c89410e9009e4474b9212ed0370a')
+    assert.equal(bytesToHex(packet.packetHash), 'd7c0e833f0cbde9f9133cd9e7d508b1a61d2c89410e9009e4474b9212ed0370a')
 
-    const [ts, title, content] = unpack(messageDecrypt(packet, identity, ratchets).slice(80))
+    const [ts, title, content] = msgunpack(messageDecrypt(packet, identity[1], ratchets).slice(80))
     assert.equal(title.length, 0)
     assert.equal(decoder.decode(content), 'hello from B')
 
     // save for PROOF validation
-    sentPackets[bytesToHex(packetHashFull.slice(0, 16))] = { recipientHash: packet.destinationHash, packetHashFull }
+    sentPackets[packet.packetHash.slice(0, 16)] = { recipientHash: packet.destinationHash, packetHash: packet.packetHash }
+  })
+})
+
+describe('LXMF', () => {
+  test('2831d76f1a8035638505c132fe5818c1 (A -> B)', () => {
+    const packet = parsePacket(packets[2])
+    assert.equal(packet.packetType, PACKET_DATA)
+    assert.equal(bytesToHex(packet.packetHash), '2831d76f1a8035638505c132fe5818c1d1d25869a973d35c197d669f0d5074d8')
+
+    assert.equal(bytesToHex(packet.destinationHash), '76a93cda889a8c0a88451e02d53fd8b9')
+    const identity = recipients[packet.destinationHash]
+    assert.ok(identity)
+
+    const { sourceHash, signature, timestamp, title, content, fields } = parseLxmf(packet, identity[1], ratchets)
+
+    assert.deepEqual(sourceHash, hexToBytes('072ec44973a8dee8e28d230fb4af8fe4'))
+    assert.equal(bytesToHex(signature), '7b9beae3f07ab3255f0c77fe295ddca70b032fd45735252025eb32dcfe9b278a9f1891ef96d2291a9f8289de000ca695d4586c8d1a846100621f01aa73134a00')
+    assert.equal(timestamp, 1759383635.953418)
+    assert.equal(title, '')
+    assert.equal(content, 'hello from A')
+    assert.deepEqual(fields, {})
+  })
+
+  test('d7c0e833f0cbde9f9133cd9e7d508b1a (A -> B)', () => {
+    const packet = parsePacket(packets[4])
+    assert.equal(packet.packetType, PACKET_DATA)
+    assert.equal(bytesToHex(packet.packetHash), 'd7c0e833f0cbde9f9133cd9e7d508b1a61d2c89410e9009e4474b9212ed0370a')
+
+    assert.equal(bytesToHex(packet.destinationHash), '072ec44973a8dee8e28d230fb4af8fe4')
+    const identity = recipients[packet.destinationHash]
+    assert.ok(identity)
+
+    const { sourceHash, signature, timestamp, title, content, fields } = parseLxmf(packet, identity[1], ratchets)
+
+    assert.deepEqual(sourceHash, hexToBytes('76a93cda889a8c0a88451e02d53fd8b9'))
+    assert.equal(bytesToHex(signature), '164bd6078866c67d5997ec8871d60125b24b4778be092c7ba6b5a20c3dad7a1c98a0382d4d77771edf93c96d78a668a962804a8009220d5ff3e8e9912718c809')
+    assert.equal(timestamp, 1759383650.12609)
+    assert.equal(title, '')
+    assert.equal(content, 'hello from B')
+    assert.deepEqual(fields, {})
   })
 })
 
 describe('PROOF', () => {
-  test.skip('2831d76f1a8035638505c132fe5818c1 (A -> B)', () => {
-    const packet = packetUnpack(packets[3])
+  test('2831d76f1a8035638505c132fe5818c1 (A -> B)', () => {
+    const packet = parsePacket(packets[3])
     assert.equal(packet.packetType, PACKET_PROOF)
     assert.equal(bytesToHex(packet.destinationHash), '2831d76f1a8035638505c132fe5818c1')
+    assert.equal(bytesToHex(packet.packetHash), 'c6c8d3a2da7de271b3262ed73f8d07f2d9b665e6dd382c610b2761f3484a6979')
 
     // lookup DATA packet that we "sent" for recipient & full-hash (only we know that, because we sent it)
-    const { recipientHash, packetHashFull } = sentPackets[bytesToHex(packet.destinationHash)]
-    assert.equal(bytesToHex(packetHashFull), '2831d76f1a8035638505c132fe5818c1d1d25869a973d35c197d669f0d5074d8')
+    const { recipientHash, packetHash } = sentPackets[packet.destinationHash]
+    assert.equal(bytesToHex(packetHash), '2831d76f1a8035638505c132fe5818c1d1d25869a973d35c197d669f0d5074d8')
 
     // it's to Client B
     assert.equal(bytesToHex(recipientHash), '76a93cda889a8c0a88451e02d53fd8b9')
-    const identity = recipients['76a93cda889a8c0a88451e02d53fd8b9']
+    const identity = recipients[recipientHash]
     assert.ok(identity)
 
-    const valid = proofValidate(packet, identity, packetHashFull)
+    const { valid } = parseProof(packet, identity[1], packetHash)
     assert.ok(valid)
   })
 
-  test.skip('d7c0e833f0cbde9f9133cd9e7d508b1a (B -> A)', () => {
-    const packet = packetUnpack(packets[5])
+  test('d7c0e833f0cbde9f9133cd9e7d508b1a (B -> A)', () => {
+    const packet = parsePacket(packets[5])
     assert.equal(packet.packetType, PACKET_PROOF)
     assert.equal(bytesToHex(packet.destinationHash), 'd7c0e833f0cbde9f9133cd9e7d508b1a')
+    assert.equal(bytesToHex(packet.packetHash), '3e98d0daf2b23edece8737b0ca348a04d882b1a4800b375259a6b03a1fa3b428')
 
     // lookup DATA packet that we "sent" for recipient & full-hash (only we know that, because we sent it)
-    const { recipientHash, packetHashFull } = sentPackets[bytesToHex(packet.destinationHash)]
-    assert.equal(bytesToHex(packetHashFull), 'd7c0e833f0cbde9f9133cd9e7d508b1a61d2c89410e9009e4474b9212ed0370a')
+    const { recipientHash, packetHash } = sentPackets[packet.destinationHash]
+    assert.equal(bytesToHex(packetHash), 'd7c0e833f0cbde9f9133cd9e7d508b1a61d2c89410e9009e4474b9212ed0370a')
 
     // it's to Client A
     assert.equal(bytesToHex(recipientHash), '072ec44973a8dee8e28d230fb4af8fe4')
-    const identity = recipients['072ec44973a8dee8e28d230fb4af8fe4']
+    const identity = recipients[recipientHash]
     assert.ok(identity)
 
-    const valid = proofValidate(packet, identity, packetHashFull)
+    const { valid } = parseProof(packet, identity[1], packetHash)
     assert.ok(valid)
-  })
-})
-
-describe('LXMF higher-level DATA functions: decode', () => {
-  test.skip('2831d76f1a8035638505c132fe5818c1 (A -> B)', () => {
-    const packet = packetUnpack(packets[2])
-    assert.equal(packet.packetType, PACKET_DATA)
-
-    // it's to Client B
-    assert.equal(bytesToHex(packet.destinationHash), '76a93cda889a8c0a88451e02d53fd8b9')
-    const identity = recipients['76a93cda889a8c0a88451e02d53fd8b9']
-    assert.ok(identity)
-
-    const message = decodeLxmfMessage(messageDecrypt(packet, identity, ratchets))
-    assert.equal(message.title, '')
-    assert.equal(message.content, 'hello from A')
-    assert.deepEqual(message.fields, {})
-    assert.equal(bytesToHex(message.senderHash), '072ec44973a8dee8e28d230fb4af8fe4')
-    assert.equal(bytesToHex(message.signature), '7b9beae3f07ab3255f0c77fe295ddca70b032fd45735252025eb32dcfe9b278a9f1891ef96d2291a9f8289de000ca695d4586c8d1a846100621f01aa73134a00')
-  })
-
-  test.skip('d7c0e833f0cbde9f9133cd9e7d508b1a (B -> A)', () => {
-    const packet = packetUnpack(packets[4])
-    assert.equal(packet.packetType, PACKET_DATA)
-
-    // it's to Client A
-    assert.equal(bytesToHex(packet.destinationHash), '072ec44973a8dee8e28d230fb4af8fe4')
-    const identity = recipients['072ec44973a8dee8e28d230fb4af8fe4']
-    assert.ok(identity)
-
-    const message = decodeLxmfMessage(messageDecrypt(packet, identity, ratchets))
-    assert.equal(message.title, '')
-    assert.equal(message.content, 'hello from B')
-    assert.deepEqual(message.fields, {})
-    assert.equal(bytesToHex(message.senderHash), '76a93cda889a8c0a88451e02d53fd8b9')
-    assert.equal(bytesToHex(message.signature), '164bd6078866c67d5997ec8871d60125b24b4778be092c7ba6b5a20c3dad7a1c98a0382d4d77771edf93c96d78a668a962804a8009220d5ff3e8e9912718c809')
   })
 })

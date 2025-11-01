@@ -2,14 +2,31 @@
  * Lightweight Reticulum library for JavaScript
  */
 
-import { cbc } from '@noble/ciphers/aes.js'
-import { randomBytes } from '@noble/ciphers/utils.js'
-import { sha256 } from '@noble/hashes/sha2.js'
-import { hmac } from '@noble/hashes/hmac.js'
-import { hkdf } from '@noble/hashes/hkdf.js'
-import { ed25519 } from '@noble/curves/ed25519.js'
-import { x25519 } from '@noble/curves/ed25519.js'
-import { pack, unpack } from 'msgpackr'
+// prettier-ignore
+import {
+  hexToBytes,
+  bytesToHex,
+  randomBytes,
+  concatBytes,
+  equalBytes,
+  
+  msgunpack,
+  msgpack,
+  
+  sha256,
+  hmacSha256,
+  hkdf,
+
+  aesCbcDecrypt,
+  aesCbcEncrypt,
+  
+  ed25519PublicForPrivate,
+  ed25519Sign,
+  ed25519Validate,
+  
+  x25519Exchange,
+  x25519PublicForPrivate
+} from './utils.js'
 
 // Packet types
 export const PACKET_DATA = 0x00
@@ -50,588 +67,351 @@ export const DEST_LINK = 0x03
 export const TRANSPORT_BROADCAST = 0
 export const TRANSPORT_TRANSPORT = 1
 
-// Crypto helper functions
-function _hmacSha256(key, data) {
-  return hmac(sha256, key, data)
-}
+const encoder = new TextEncoder()
+const decoder = new TextDecoder()
 
-function _sha256(data) {
-  return sha256(data)
-}
+// build packet-bytes from packet object
+// build packet-bytes from packet object
+export function buildPacket(packet) {
+  const { hops = 0, destinationType = DEST_SINGLE, transportType = TRANSPORT_BROADCAST, packetType, context, transportId, destinationHash, data } = packet
 
-function _hkdf(length, deriveFrom, salt, context = null) {
-  const hashLen = 32
+  // Set flags byte
+  const contextFlag = context !== undefined ? 1 : 0
+  const headerType = transportId !== undefined ? 1 : 0
 
-  if (!length || length < 1) {
-    throw new Error('Invalid output key length')
+  const flags = (headerType << 6) | (contextFlag << 5) | (transportType << 4) | (destinationType << 2) | packetType
+
+  // Build packet
+  const parts = [new Uint8Array([flags, hops])]
+
+  if (headerType === 1) {
+    parts.push(transportId)
   }
 
-  if (!deriveFrom || deriveFrom.length === 0) {
-    throw new Error('Cannot derive key from empty input material')
+  parts.push(destinationHash)
+
+  // parsePacket always expects a byte at the context position
+  // even when contextFlag is 0, so we must include it
+  parts.push(new Uint8Array([context !== undefined ? context : 0]))
+
+  if (data) {
+    parts.push(data)
   }
 
-  if (!salt || salt.length === 0) {
-    salt = new Uint8Array(hashLen)
+  return concatBytes(...parts)
+}
+
+// build packet-bytes for ANNOUNCE
+export function buildAnnounce(identityPrivBytes, identityPubBytes, name = 'lxmf.delivery', ratchet_pub, app_data) {
+  const destinationHash = getDestinationHash(identityPubBytes, name)
+
+  // Generate random hash
+  const randomHash = randomBytes(10)
+
+  // Build name hash
+  const nameHash = sha256(encoder.encode(name)).slice(0, 10)
+
+  // Determine if we have an explicit ratchet
+  const hasExplicitRatchet = ratchet_pub && !equalBytes(ratchet_pub, identityPubBytes.slice(0, 32))
+  const ratchetForSigning = hasExplicitRatchet ? ratchet_pub : new Uint8Array(0)
+
+  // Build announce data before signature
+  const appDataBytes = app_data ? (typeof app_data === 'string' ? encoder.encode(app_data) : app_data) : new Uint8Array(0)
+
+  // Build signed data
+  const signedData = concatBytes(destinationHash, identityPubBytes, nameHash, randomHash, ratchetForSigning, appDataBytes)
+
+  // Sign with Ed25519 private key (second 32 bytes of identity)
+  const signature = ed25519Sign(signedData, identityPrivBytes.slice(32, 64))
+
+  // Build announce data payload
+  const dataParts = [
+    identityPubBytes, // 64 bytes (encrypt + sign keys)
+    nameHash, // 10 bytes
+    randomHash // 10 bytes
+  ]
+
+  if (hasExplicitRatchet) {
+    dataParts.push(ratchet_pub) // 32 bytes
   }
 
-  if (context === null) {
-    context = new Uint8Array(0)
+  dataParts.push(signature) // 64 bytes
+
+  if (appDataBytes.length > 0) {
+    dataParts.push(appDataBytes)
   }
 
-  return hkdf(sha256, deriveFrom, salt, context, length)
+  const data = concatBytes(...dataParts)
+
+  // Build packet
+  return buildPacket({
+    hops: 0,
+    destinationType: DEST_SINGLE,
+    transportType: TRANSPORT_BROADCAST,
+    packetType: PACKET_ANNOUNCE,
+    context: hasExplicitRatchet ? CONTEXT_NONE : undefined,
+    destinationHash,
+    data
+  })
 }
 
-// PKCS7 padding - only needed for encryption (Noble auto-unpads on decrypt)
-function _pkcs7Pad(data, bs = 16) {
-  const l = data.length
-  const n = bs - (l % bs)
-  const padding = new Uint8Array(n).fill(n)
-  const result = new Uint8Array(l + n)
-  result.set(data)
-  result.set(padding, l)
-  return result
+// build packet-bytes for DATA packet
+export function buildData(destinationHash, data, context = CONTEXT_NONE, transportId) {
+  return buildPacket({
+    hops: 0,
+    destinationType: DEST_SINGLE,
+    transportType: transportId ? TRANSPORT_TRANSPORT : TRANSPORT_BROADCAST,
+    packetType: PACKET_DATA,
+    context,
+    transportId,
+    destinationHash,
+    data
+  })
 }
 
-function _aesCbcEncrypt(key, iv, plaintext) {
-  const cipher = cbc(key, iv)
-  return cipher.encrypt(plaintext)
+// build packet-bytes for LXMF DATA packet
+export function buildLxmf({ sourceHash, senderPrivBytes, receiverPubBytes, receiverRatchetPub, timestamp, title = '', content = '', fields = {} }) {
+  // Encode LXMF message content
+  const lxmfContent = msgpack([timestamp, encoder.encode(title), encoder.encode(content), fields])
+
+  // Create plaintext: sourceHash + signature + msgpack content
+  // We need to sign the message first
+  const messageToSign = concatBytes(sourceHash, lxmfContent)
+  const signingPrivKey = senderPrivBytes.slice(32, 64)
+  const signature = ed25519Sign(messageToSign, signingPrivKey)
+
+  const plaintext = concatBytes(sourceHash, signature, lxmfContent)
+
+  // Encrypt the message
+  const encrypted = messageEncrypt(plaintext, receiverPubBytes, receiverRatchetPub)
+
+  // Get destination hash for receiver
+  const destinationHash = sha256(receiverPubBytes).slice(0, 16)
+
+  // Build DATA packet with LXMF context
+  return buildData(destinationHash, encrypted, CONTEXT_NONE)
 }
 
-function _aesCbcDecrypt(key, iv, ciphertext) {
-  const cipher = cbc(key, iv)
-  // Noble's CBC automatically removes PKCS7 padding on decrypt
-  return cipher.decrypt(ciphertext)
-}
+export function buildProof(dataPacket, identityPrivBytes) {
+  // Get the packet hash and destination hash from the data packet
+  let packetHash, destinationHash
 
-function _ed25519Sign(data, privateKey) {
-  return ed25519.sign(data, privateKey)
-}
-
-function _ed25519Validate(publicKey, signature, message) {
-  try {
-    return ed25519.verify(signature, message, publicKey)
-  } catch (e) {
-    return false
-  }
-}
-
-function _x25519Exchange(privateKey, publicKey) {
-  return x25519.getSharedSecret(privateKey, publicKey)
-}
-
-// Identity functions
-export function identityCreate() {
-  const encryptPrivate = randomBytes(32)
-  const encryptPublic = x25519.getPublicKey(encryptPrivate)
-  const signPrivate = randomBytes(32)
-  const signPublic = ed25519.getPublicKey(signPrivate)
-  return {
-    public: { encrypt: encryptPublic, sign: signPublic },
-    private: { encrypt: encryptPrivate, sign: signPrivate }
-  }
-}
-
-export function getIdentityFromBytes(privateIdentityBytes) {
-  if (privateIdentityBytes.length !== 64) {
-    throw new Error('Private identity must be 64 bytes')
-  }
-
-  const encryptPrivate = privateIdentityBytes.slice(0, 32)
-  const signPrivate = privateIdentityBytes.slice(32, 64)
-
-  const encryptPublic = x25519.getPublicKey(encryptPrivate)
-  const signPublic = ed25519.getPublicKey(signPrivate)
-
-  return {
-    public: {
-      encrypt: encryptPublic,
-      sign: signPublic
-    },
-    private: {
-      encrypt: encryptPrivate,
-      sign: signPrivate
-    }
-  }
-}
-
-// Ratchet functions
-export function ratchetCreateNew() {
-  return randomBytes(32)
-}
-
-export function ratchetGetPublic(privateRatchet) {
-  return x25519.getPublicKey(privateRatchet)
-}
-
-// Destination hash
-export function getDestinationHash(identity, appName, ...aspects) {
-  const identityData = new Uint8Array(64)
-  identityData.set(identity.public.encrypt)
-  identityData.set(identity.public.sign, 32)
-  const identityHash = _sha256(identityData).slice(0, 16)
-
-  let fullName = appName
-  for (const aspect of aspects) {
-    fullName += '.' + aspect
+  if (dataPacket instanceof Uint8Array) {
+    const parsed = parsePacket(dataPacket)
+    packetHash = parsed.packetHash
+    destinationHash = parsed.destinationHash
+  } else {
+    packetHash = dataPacket.packetHash
+    destinationHash = dataPacket.destinationHash
   }
 
-  const nameHash = _sha256(new TextEncoder().encode(fullName)).slice(0, 10)
+  // Sign the packet hash with the private signing key (32 bytes)
+  const signingPrivKey = identityPrivBytes.slice(32, 64)
+  const signature = ed25519Sign(packetHash, signingPrivKey)
 
+  // Build proof packet
+  return buildPacket({
+    hops: 0,
+    destinationType: DEST_SINGLE,
+    transportType: TRANSPORT_BROADCAST,
+    packetType: PACKET_PROOF,
+    destinationHash,
+    data: signature
+  })
+}
+
+// Helper function for message encryption (mirrors messageDecrypt)
+function messageEncrypt(plaintext, identityPub, ratchet) {
+  const identity_hash = sha256(identityPub).slice(0, 16)
+
+  // Generate ephemeral key pair
+  const ephemeral_priv = randomBytes(32)
+  const ephemeral_pub = x25519PublicForPrivate(ephemeral_priv)
+
+  // Derive shared key
+  const peer_pub = ratchet // Use ratchet as the public key to exchange with
+  const shared_key = x25519Exchange(ephemeral_priv, peer_pub)
+  const derived_key = hkdf(64, shared_key, identity_hash)
+
+  const signing_key = derived_key.slice(0, 32)
+  const encryption_key = derived_key.slice(32)
+
+  // Generate IV
+  const iv = randomBytes(16)
+
+  // Encrypt plaintext
+  const ciphertext_data = aesCbcEncrypt(encryption_key, iv, plaintext)
+
+  // Build data to HMAC (iv + ciphertext_data)
+  const signed_data = concatBytes(iv, ciphertext_data)
+  const hmac = hmacSha256(signing_key, signed_data)
+
+  // Build final token: ephemeral_pub + iv + ciphertext + hmac
+  return concatBytes(ephemeral_pub, iv, ciphertext_data, hmac)
+}
+
+// Get the destination hash (address) for a publicc key ([ DECRYPT(32), SIGN(32) ])
+export function getDestinationHash(identityPubBytes, fullName = 'lxmf.delivery') {
+  const identityHash = sha256(identityPubBytes).slice(0, 16)
+  const nameHash = sha256(encoder.encode(fullName)).slice(0, 10)
   const addrHashMaterial = new Uint8Array(26)
   addrHashMaterial.set(nameHash)
   addrHashMaterial.set(identityHash, 10)
-
-  return _sha256(addrHashMaterial).slice(0, 16)
+  return sha256(addrHashMaterial).slice(0, 16)
 }
 
-export function packetUnpack(packetBytes) {
-  const result = {
-    raw: packetBytes,
-    ifacFlag: Boolean(packetBytes[0] & 0b10000000),
-    headerType: Boolean(packetBytes[0] & 0b01000000),
-    contextFlag: Boolean(packetBytes[0] & 0b00100000),
-    propagationType: Boolean(packetBytes[0] & 0b00010000),
-    destinationType: packetBytes[0] & 0b00001100,
-    packetType: packetBytes[0] & 0b00000011,
-    hops: packetBytes[1]
-  }
-
-  let offset = 2
-
-  if (result.headerType) {
-    // Double header: first hash is source, second is destination
-    result.sourceHash = packetBytes.slice(offset, offset + 16)
-    offset += 16
-    result.destinationHash = packetBytes.slice(offset, offset + 16)
-    offset += 16
+// Get the message-id for raw packet-bytes
+export function getMessageId(packetBytes) {
+  const headerType = (packetBytes[0] >> 6) & 0b11
+  const hashablePart = new Uint8Array(packetBytes.length - (headerType === 1 ? 18 : 2) + 1)
+  hashablePart[0] = packetBytes[0] & 0b00001111
+  if (headerType === 1) {
+    hashablePart.set(packetBytes.slice(18), 1)
   } else {
-    // Single header: only destination hash
-    result.destinationHash = packetBytes.slice(offset, offset + 16)
-    offset += 16
-    result.sourceHash = null
+    hashablePart.set(packetBytes.slice(2), 1)
   }
-
-  // ALWAYS read context byte
-  result.context = packetBytes[offset]
-  offset += 1
-
-  result.data = packetBytes.slice(offset)
-  return result
+  return sha256(hashablePart)
 }
 
-export function packetPack(packet) {
-  let headerByte = 0
+export const privateIdentity = () => randomBytes(64) // encrypt, sign
 
-  const sourceHash = packet.sourceHash
-  if (sourceHash) {
-    packet.headerType = 1
-  }
-
-  if (packet.ifacFlag) {
-    headerByte |= 0b10000000
-  }
-  if (packet.headerType) {
-    headerByte |= 0b01000000
-  }
-
-  const hasContext = 'context' in packet
-  if (hasContext) {
-    packet.contextFlag = true
-  }
-  if (packet.contextFlag) {
-    headerByte |= 0b00100000
-  }
-
-  if (packet.propagationType) {
-    headerByte |= 0b00010000
-  }
-
-  const destinationType = (packet.destinationType || 0) & 0b00001100
-  headerByte |= destinationType
-
-  const packetType = (packet.packetType || 0) & 0b00000011
-  headerByte |= packetType
-
-  const parts = []
-  parts.push(new Uint8Array([headerByte]))
-  parts.push(new Uint8Array([(packet.hops || 0) & 0xff]))
-
-  const dest = packet.destinationHash || new Uint8Array(0)
-  if (dest.length !== 16) {
-    throw new Error('destination_hash must be 16 bytes')
-  }
-  parts.push(dest)
-
-  if (sourceHash) {
-    if (sourceHash.length !== 16) {
-      throw new Error('source_hash must be 16 bytes')
-    }
-    parts.push(sourceHash)
-  }
-
-  // CRITICAL: Only add context byte if contextFlag is true
-  if (packet.contextFlag) {
-    parts.push(new Uint8Array([(packet.context || 0) & 0xff]))
-  }
-
-  parts.push(packet.data || new Uint8Array(0))
-
-  const totalLength = parts.reduce((sum, part) => sum + part.length, 0)
-  const result = new Uint8Array(totalLength)
-  let offset = 0
-
-  for (const part of parts) {
-    result.set(part, offset)
-    offset += part.length
-  }
-
-  return result
+export function publicIdentity(identityPrivBytes) {
+  return new Uint8Array([...x25519PublicForPrivate(identityPrivBytes.slice(0, 32)), ...ed25519PublicForPrivate(identityPrivBytes.slice(32, 64))])
 }
 
-// Announce functions
-export function buildAnnounce(identity, destination, name = 'lxmf.delivery', ratchetPub = null, appData = null) {
-  const pubEnc = identity.public.encrypt
-  const pubSig = identity.public.sign
+export const privateRatchet = () => randomBytes(32)
+export const publicRatchet = x25519PublicForPrivate
 
-  if (pubEnc.length !== 32 || pubSig.length !== 32) {
-    throw new Error('Keys must be 32 bytes')
-  }
+export function parsePacket(packetBytes) {
+  const packet = { raw: packetBytes, packetHash: getMessageId(packetBytes) }
+  packet['flags'] = packet['raw'][0]
+  packet['hops'] = packet['raw'][1]
 
-  const keys = new Uint8Array(64)
-  keys.set(pubEnc)
-  keys.set(pubSig, 32)
+  packet['headerType'] = (packet['flags'] & 0b01000000) >> 6
+  packet['contextFlag'] = (packet['flags'] & 0b00100000) >> 5
+  packet['transportType'] = (packet['flags'] & 0b00010000) >> 4
+  packet['destinationType'] = (packet['flags'] & 0b00001100) >> 2
+  packet['packetType'] = packet['flags'] & 0b00000011
 
-  const nameHash = _sha256(new TextEncoder().encode(name)).slice(0, 10)
-  const randomHash = randomBytes(10)
+  const DST_LEN = 16 // RNS.Reticulum.TRUNCATED_HASHLENGTH//8
 
-  let appDataBytes
-  if (appData === null) {
-    appDataBytes = new Uint8Array(0)
-  } else if (typeof appData === 'string') {
-    appDataBytes = new TextEncoder().encode(appData)
+  if (packet['headerType'] == 1) {
+    packet['transportId'] = packet['raw'].slice(2, DST_LEN + 2)
+    packet['destinationHash'] = packet['raw'].slice(DST_LEN + 2, 2 * DST_LEN + 2)
+    packet['context'] = packet['raw'].slice(2 * DST_LEN + 2, 2 * DST_LEN + 3)
+    packet['data'] = packet['raw'].slice(2 * DST_LEN + 3)
   } else {
-    appDataBytes = appData
+    packet['transportId'] = undefined
+    packet['destinationHash'] = packet['raw'].slice(2, DST_LEN + 2)
+    packet['context'] = packet['raw'].slice(DST_LEN + 2, DST_LEN + 3)
+    packet['data'] = packet['raw'].slice(DST_LEN + 3)
   }
 
-  let effectiveRatchet
-  let contextVal
-
-  if (ratchetPub === null || arraysEqual(ratchetPub, pubEnc)) {
-    effectiveRatchet = pubEnc
-    contextVal = 0
-  } else {
-    if (ratchetPub.length !== 32) {
-      throw new Error('ratchet_pub must be 32 bytes')
-    }
-    effectiveRatchet = ratchetPub
-    contextVal = 1
-  }
-
-  const signedDataParts = [destination, keys, nameHash, randomHash, effectiveRatchet, appDataBytes]
-  const signedData = concatArrays(signedDataParts)
-  const signature = _ed25519Sign(signedData, identity.private.sign)
-
-  let payload
-  if (contextVal === 1) {
-    payload = concatArrays([keys, nameHash, randomHash, effectiveRatchet, signature, appDataBytes])
-  } else {
-    payload = concatArrays([keys, nameHash, randomHash, signature, appDataBytes])
-  }
-
-  const pkt = {
-    destinationHash: destination,
-    packetType: PACKET_ANNOUNCE,
-    destinationType: 0,
-    hops: 0,
-    data: payload,
-    context: contextVal,
-    contextFlag: true
-  }
-
-  return packetPack(pkt)
+  return packet
 }
 
-export function announceParse(packet) {
-  const keysize = 64
-  const perKeysize = 32
-  const nameHashLen = 10
-  const randomHashLen = 10
-  const sigLen = 64
-
+export function parseAnnounce(packet) {
   const data = packet.data
-  const out = { valid: false }
+  const announce = { valid: false }
 
-  // Extract the full 64-byte public key
-  const publicKey = data.slice(0, keysize)
-  out.keyPubEncrypt = data.slice(0, perKeysize)
-  out.keyPubSignature = data.slice(perKeysize, keysize)
-  out.nameHash = data.slice(keysize, keysize + nameHashLen)
-  out.randomHash = data.slice(keysize + nameHashLen, keysize + nameHashLen + randomHashLen)
+  // Extract keys (64 bytes total)
+  const publicKey = data.slice(0, 64)
+  announce.keyPubEncrypt = data.slice(0, 32)
+  announce.keyPubSignature = data.slice(32, 64)
 
-  // Use contextFlag (header bit), NOT context (byte value)
-  const hasExplicitRatchet = packet.contextFlag === true || packet.contextFlag === 1
+  // Extract name and random hashes
+  announce.nameHash = data.slice(64, 74)
+  announce.randomHash = data.slice(74, 84)
 
+  let offset = 84
   let ratchetForSigning
 
-  if (hasExplicitRatchet) {
-    // Explicit ratchet present in data
-    const ratchetStart = keysize + nameHashLen + randomHashLen
-    out.ratchetPub = data.slice(ratchetStart, ratchetStart + perKeysize)
-    ratchetForSigning = out.ratchetPub
-    out.signature = data.slice(ratchetStart + perKeysize, ratchetStart + perKeysize + sigLen)
-    if (data.length > ratchetStart + perKeysize + sigLen) {
-      out.appData = data.slice(ratchetStart + perKeysize + sigLen)
-    } else {
-      out.appData = new Uint8Array(0)
-    }
+  // Check if explicit ratchet is present (based on contextFlag)
+  if (packet.contextFlag) {
+    // Explicit ratchet present
+    announce.ratchetPub = data.slice(offset, offset + 32)
+    ratchetForSigning = announce.ratchetPub
+    offset += 32
   } else {
-    // No explicit ratchet - use EMPTY bytes for signed data
-    out.ratchetPub = out.keyPubEncrypt // For reference
-    ratchetForSigning = new Uint8Array(0) // EMPTY for signature!
-    const sigStart = keysize + nameHashLen + randomHashLen
-    out.signature = data.slice(sigStart, sigStart + sigLen)
-    if (data.length > sigStart + sigLen) {
-      out.appData = data.slice(sigStart + sigLen)
-    } else {
-      out.appData = new Uint8Array(0)
+    // No explicit ratchet - it's implicit (empty for signing)
+    announce.ratchetPub = announce.keyPubEncrypt
+    ratchetForSigning = new Uint8Array(0)
+  }
+
+  // Extract signature
+  announce.signature = data.slice(offset, offset + 64)
+  offset += 64
+
+  // Extract app data
+  announce.appData = data.length > offset ? data.slice(offset) : new Uint8Array(0)
+
+  // Build signed data for verification
+  const signedData = concatBytes(packet.destinationHash, publicKey, announce.nameHash, announce.randomHash, ratchetForSigning, announce.appData)
+
+  // Verify signature
+  announce.valid = ed25519Validate(announce.keyPubSignature, announce.signature, signedData)
+  announce.destinationHash = packet.destinationHash
+
+  return announce
+}
+
+export function parseLxmf(packet, identityPub, ratchets = []) {
+  const plaintext = messageDecrypt(packet, identityPub, ratchets)
+  if (plaintext) {
+    const sourceHash = plaintext.slice(0, 16)
+    const signature = plaintext.slice(16, 80)
+    const [timestamp, title, content, fields] = msgunpack(plaintext.slice(80))
+    return {
+      sourceHash,
+      signature,
+      timestamp,
+      title: decoder.decode(title),
+      content: decoder.decode(content),
+      fields
     }
   }
-
-  // Build signed data using the FULL 64-byte publicKey
-  const signedData = concatArrays([
-    packet.destinationHash,
-    publicKey, // Full 64 bytes
-    out.nameHash,
-    out.randomHash,
-    ratchetForSigning, // Empty when contextFlag=0, explicit when contextFlag=1
-    out.appData || new Uint8Array(0)
-  ])
-
-  out.valid = _ed25519Validate(out.keyPubSignature, out.signature, signedData)
-  out.destinationHash = packet.destinationHash
-
-  return out
-}
-
-// Message functions
-export function getMessageId(packet) {
-  const headerType = (packet.raw[0] >> 6) & 0b11
-  const hashablePart = new Uint8Array(packet.raw.length - (headerType === 1 ? 18 : 2) + 1)
-  hashablePart[0] = packet.raw[0] & 0b00001111
-
-  if (headerType === 1) {
-    hashablePart.set(packet.raw.slice(18), 1)
-  } else {
-    hashablePart.set(packet.raw.slice(2), 1)
-  }
-
-  return _sha256(hashablePart)
-}
-
-export function proofValidate(packet, identity, fullPacketHash) {
-  return _ed25519Validate(identity.public.sign, packet.data.slice(0, 64), fullPacketHash)
-}
-
-export function messageDecrypt(packet, identity, ratchets = null) {
-  const identityData = new Uint8Array(64)
-  identityData.set(identity.public.encrypt)
-  identityData.set(identity.public.sign, 32)
-  const identityHash = _sha256(identityData).slice(0, 16)
-
-  const ciphertextToken = packet.data
-
-  if (!ciphertextToken || ciphertextToken.length <= 49) {
-    return null
-  }
-
-  const peerPubBytes = ciphertextToken.slice(0, 32)
-  const ciphertext = ciphertextToken.slice(32)
-
-  if (ratchets) {
-    for (const ratchet of ratchets) {
-      if (ratchet.length !== 32) {
-        continue
-      }
-
-      try {
-        const sharedKey = _x25519Exchange(ratchet, peerPubBytes)
-        const derivedKey = _hkdf(64, sharedKey, identityHash, new Uint8Array(0))
-
-        const signingKey = derivedKey.slice(0, 32)
-        const encryptionKey = derivedKey.slice(32)
-
-        if (ciphertext.length <= 48) {
-          continue
-        }
-
-        const receivedHmac = ciphertext.slice(-32)
-        const signedData = ciphertext.slice(0, -32)
-        const expectedHmac = _hmacSha256(signingKey, signedData)
-
-        if (!arraysEqual(receivedHmac, expectedHmac)) {
-          continue
-        }
-
-        const iv = ciphertext.slice(0, 16)
-        const ciphertextData = ciphertext.slice(16, -32)
-
-        // Noble's CBC automatically removes PKCS7 padding
-        const plaintext = _aesCbcDecrypt(encryptionKey, iv, ciphertextData)
-
-        return plaintext
-      } catch (e) {
-        continue
-      }
-    }
-  }
-
   return null
 }
 
-export function buildProof(identity, packet, messageId = null) {
-  if (messageId === null) {
-    messageId = getMessageId(packet)
-  }
-
-  const proofDestination = messageId.slice(0, 16)
-  const signature = _ed25519Sign(messageId, identity.private.sign)
-
-  const proofData = new Uint8Array(1 + signature.length)
-  proofData[0] = 0x00
-  proofData.set(signature, 1)
-
-  const pkt = {
-    destinationHash: proofDestination,
-    packetType: PACKET_PROOF,
-    destinationType: 0,
-    hops: 0,
-    data: proofData
-  }
-
-  return packetPack(pkt)
+export function parseProof(packet, identityPub, fullPacketHash) {
+  const valid = ed25519Validate(identityPub.slice(32), packet.data.slice(0, 64), fullPacketHash)
+  return { valid }
 }
 
-export function buildData(identity, recipientAnnounce, plaintext, ratchet = null) {
-  const recipientIdentityData = new Uint8Array(64)
-  recipientIdentityData.set(recipientAnnounce.keyPubEncrypt)
-  recipientIdentityData.set(recipientAnnounce.keyPubSignature, 32)
-  const recipientIdentityHash = _sha256(recipientIdentityData).slice(0, 16)
-
-  if (ratchet === null) {
-    ratchet = identity.private.encrypt
+export function messageDecrypt(packet, identityPub, ratchets = []) {
+  const identity_hash = sha256(identityPub).slice(0, 16)
+  const ciphertext_token = packet.data
+  if (!ciphertext_token || ciphertext_token.length <= 49) {
+    return null
   }
 
-  const ephemeralKey = randomBytes(32)
-  const ephemeralPub = x25519.getPublicKey(ephemeralKey)
+  // Extract ephemeral public key and token
+  const peer_pub_bytes = ciphertext_token.slice(0, 32)
+  const ciphertext = ciphertext_token.slice(32)
 
-  const sharedKey = _x25519Exchange(ratchet, recipientAnnounce.ratchetPub)
-
-  const derivedKey = _hkdf(64, sharedKey, recipientIdentityHash, new Uint8Array(0))
-  const signingKey = derivedKey.slice(0, 32)
-  const encryptionKey = derivedKey.slice(32)
-
-  const paddedPlaintext = _pkcs7Pad(plaintext)
-  const iv = randomBytes(16)
-  const ciphertext = _aesCbcEncrypt(encryptionKey, iv, paddedPlaintext)
-
-  const signedData = concatArrays([iv, ciphertext])
-  const hmacSig = _hmacSha256(signingKey, signedData)
-
-  const token = concatArrays([new Uint8Array([0x00]), ephemeralPub, iv, ciphertext, hmacSig])
-
-  const recipientDest =
-    recipientAnnounce.destinationHash ||
-    getDestinationHash(
-      {
-        public: {
-          encrypt: recipientAnnounce.keyPubEncrypt,
-          sign: recipientAnnounce.keyPubSignature
-        }
-      },
-      'lxmf',
-      'delivery'
-    )
-
-  const pkt = {
-    destinationHash: recipientDest,
-    packetType: PACKET_DATA,
-    destinationType: 0,
-    hops: 0,
-    data: token
-  }
-
-  return packetPack(pkt)
-}
-
-export function encodeLxmfMessage(myIdentity, myDest, myRatchet, recipientAnnounce, message) {
-  const recipientDest = recipientAnnounce.destinationHash
-
-  const timestamp = message.timestamp || Math.floor(Date.now() / 1000)
-  let title = message.title || new Uint8Array(0)
-  if (typeof title === 'string') {
-    title = new TextEncoder().encode(title)
-  }
-  let content = message.content || new Uint8Array(0)
-  if (typeof content === 'string') {
-    content = new TextEncoder().encode(content)
-  }
-
-  const fields = {}
-  for (const [k, v] of Object.entries(message)) {
-    if (!['timestamp', 'title', 'content'].includes(k)) {
-      fields[k] = v
+  for (let ratchet of ratchets) {
+    if (ratchet.length !== 32) {
+      // console.error('invalid ratchet length')
+      continue
+    }
+    try {
+      const shared_key = x25519Exchange(ratchet, peer_pub_bytes)
+      const derived_key = hkdf(64, shared_key, identity_hash)
+      const signing_key = derived_key.slice(0, 32)
+      const encryption_key = derived_key.slice(32)
+      const received_hmac = ciphertext.slice(-32)
+      const signed_data = ciphertext.slice(0, -32)
+      const expected_hmac = hmacSha256(signing_key, signed_data)
+      if (!equalBytes(expected_hmac, received_hmac)) {
+        // console.error('hmac fail', expected_hmac, received_hmac)
+        continue
+      }
+      const iv = ciphertext.slice(0, 16)
+      const ciphertext_data = ciphertext.slice(16, -32)
+      return aesCbcDecrypt(encryption_key, iv, ciphertext_data)
+    } catch (e) {
+      // console.error(e.message)
     }
   }
-
-  const payload = [timestamp, title, content, fields]
-  const packedPayload = pack(payload)
-
-  // Calculate hash with destination included
-  const hashedPart = concatArrays([recipientDest, myDest, packedPayload])
-  const messageHash = sha256(hashedPart)
-
-  // Sign: hashed_part + message_hash
-  const signedPart = concatArrays([hashedPart, messageHash])
-  const signature = _ed25519Sign(signedPart, myIdentity.private.sign, myIdentity.public.sign)
-
-  // LXMF message: my_dest + signature + packed_payload
-  const lxmfMessage = concatArrays([myDest, signature, packedPayload])
-
-  return buildData(myIdentity, recipientAnnounce, lxmfMessage, myRatchet)
-}
-
-export function decodeLxmfMessage(plaintext) {
-  const sourceHash = plaintext.slice(0, 16)
-  const signature = plaintext.slice(16, 80)
-
-  const [timestamp, title, content, fields] = unpack(plaintext.slice(80))
-
-  return {
-    ...fields,
-    sourceHash,
-    signature,
-    timestamp,
-    title,
-    content
-  }
-}
-
-// Utility functions
-function arraysEqual(a, b) {
-  if (a.length !== b.length) return false
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false
-  }
-  return true
-}
-
-function concatArrays(arrays) {
-  const totalLength = arrays.reduce((sum, arr) => sum + arr.length, 0)
-  const result = new Uint8Array(totalLength)
-  let offset = 0
-  for (const arr of arrays) {
-    result.set(arr, offset)
-    offset += arr.length
-  }
-  return result
+  return null
 }

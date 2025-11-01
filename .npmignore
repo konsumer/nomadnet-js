@@ -1,9 +1,7 @@
 demo/
 examples/
 public/
-
-src/site.js
+src/site.*
 .prettierrc
 *.md
 LICENSE
-
