@@ -1,6 +1,6 @@
 // this is a simple echo-server that runs over websocket
 
-import { identityCreate, getDestinationHash, ratchetCreateNew, ratchetGetPublic, decodePacket, buildAnnounce, buildProof, messageDecrypt, parseLxmfMessage, buildLxmfMessage, getMessageId, announceParse, PACKET_ANNOUNCE, PACKET_PROOF, PACKET_DATA } from '../src/index.js'
+import { identityCreate, getDestinationHash, ratchetCreateNew, ratchetGetPublic, packetUnpack, buildAnnounce, buildProof, messageDecrypt, decodeLxmfMessage, encodeLxmfMessage, getMessageId, announceParse, PACKET_ANNOUNCE, PACKET_PROOF, PACKET_DATA } from '../src/index.js'
 import { bytesToHex } from '@noble/curves/utils.js'
 
 const uri = 'wss://signal.konsumer.workers.dev/ws/reticulum'
@@ -22,7 +22,7 @@ async function periodicAnnounce(websocket, interval = 30000) {
     try {
       const announceBytes = buildAnnounce(me, meDest, 'lxmf.delivery', ratchetPub)
 
-      const decoded = decodePacket(announceBytes)
+      const decoded = packetUnpack(announceBytes)
       const parsed = announceParse({ destinationHash: meDest, ...decoded })
 
       websocket.send(announceBytes)
@@ -69,7 +69,7 @@ async function handleData(packet, websocket) {
     const plaintext = messageDecrypt(packet, me, [ratchet])
     if (plaintext) {
       try {
-        const message = parseLxmfMessage(plaintext)
+        const message = decodeLxmfMessage(plaintext)
         const contentText = new TextDecoder().decode(message.content)
         const senderHash = Buffer.from(message.sourceHash).toString('hex')
         console.log(`  From: ${senderHash}`)
@@ -80,12 +80,12 @@ async function handleData(packet, websocket) {
         const senderAnnounce = announces[senderHash]
         if (senderAnnounce) {
           console.log(`  Echoing message back to ${senderHash}`)
-          const responseBytes = buildLxmfMessage(me, meDest, ratchet, senderAnnounce, {
+          const responseBytes = encodeLxmfMessage(me, meDest, ratchet, senderAnnounce, {
             title: 'Echo',
             content: contentText,
             timestamp: Math.floor(Date.now() / 1000)
           })
-          const responseId = getMessageId(decodePacket(responseBytes))
+          const responseId = getMessageId(packetUnpack(responseBytes))
           console.log(`  Responded with message ${bytesToHex(responseId)}`)
 
           websocket.send(responseBytes)
@@ -105,7 +105,7 @@ async function handleData(packet, websocket) {
 async function handleIncoming(websocket) {
   websocket.on('message', async (data) => {
     try {
-      const packet = decodePacket(new Uint8Array(data))
+      const packet = packetUnpack(new Uint8Array(data))
       if (packet.packetType === PACKET_ANNOUNCE) {
         await handleAnnounce(packet)
       } else if (packet.packetType === PACKET_PROOF) {

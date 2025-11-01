@@ -56,7 +56,7 @@ function addRatchet() {
 
 // handle an incoming packet
 function handlePacket(data) {
-  const packet = rns.decodePacket(new Uint8Array(data))
+  const packet = rns.packetUnpack(new Uint8Array(data))
   const destinationHex = bytesToHex(packet.destinationHash)
   console.log(`${packetTypeNames[packet.packetType] || 'UNKNOWN'} (${destinationHex})`)
 

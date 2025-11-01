@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "vite",
-    "build": "vite build --base ./"
+    "build": "vite build --base ./",
+    "test": "node --test"
   },
   "keywords": [
     "nomadnet",

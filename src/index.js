@@ -184,7 +184,7 @@ export function getDestinationHash(identity, appName, ...aspects) {
   return _sha256(addrHashMaterial).slice(0, 16)
 }
 
-export function decodePacket(packetBytes) {
+export function packetUnpack(packetBytes) {
   const result = {
     raw: packetBytes,
     ifacFlag: Boolean(packetBytes[0] & 0b10000000),
@@ -219,7 +219,7 @@ export function decodePacket(packetBytes) {
   return result
 }
 
-export function encodePacket(packet) {
+export function packetPack(packet) {
   let headerByte = 0
 
   const sourceHash = packet.sourceHash
@@ -348,7 +348,7 @@ export function buildAnnounce(identity, destination, name = 'lxmf.delivery', rat
     contextFlag: true
   }
 
-  return encodePacket(pkt)
+  return packetPack(pkt)
 }
 
 export function announceParse(packet) {
@@ -508,7 +508,7 @@ export function buildProof(identity, packet, messageId = null) {
     data: proofData
   }
 
-  return encodePacket(pkt)
+  return packetPack(pkt)
 }
 
 export function buildData(identity, recipientAnnounce, plaintext, ratchet = null) {
@@ -560,10 +560,10 @@ export function buildData(identity, recipientAnnounce, plaintext, ratchet = null
     data: token
   }
 
-  return encodePacket(pkt)
+  return packetPack(pkt)
 }
 
-export function buildLxmfMessage(myIdentity, myDest, myRatchet, recipientAnnounce, message) {
+export function encodeLxmfMessage(myIdentity, myDest, myRatchet, recipientAnnounce, message) {
   const recipientDest = recipientAnnounce.destinationHash
 
   const timestamp = message.timestamp || Math.floor(Date.now() / 1000)
@@ -600,7 +600,7 @@ export function buildLxmfMessage(myIdentity, myDest, myRatchet, recipientAnnounc
   return buildData(myIdentity, recipientAnnounce, lxmfMessage, myRatchet)
 }
 
-export function parseLxmfMessage(plaintext) {
+export function decodeLxmfMessage(plaintext) {
   const sourceHash = plaintext.slice(0, 16)
   const signature = plaintext.slice(16, 80)
 
