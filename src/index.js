@@ -102,7 +102,7 @@ export function buildPacket(packet) {
 }
 
 // build packet-bytes for ANNOUNCE
-export function buildAnnounce(identityPrivBytes, identityPubBytes, name = 'lxmf.delivery', ratchet_pub, app_data) {
+export function buildAnnounce(identityPrivBytes, identityPubBytes, ratchet_pub, app_data, name = 'lxmf.delivery') {
   const destinationHash = getDestinationHash(identityPubBytes, name)
 
   // Generate random hash
@@ -316,6 +316,7 @@ export function parseAnnounce(packet) {
 
   // Extract keys (64 bytes total)
   const publicKey = data.slice(0, 64)
+  announce.publicKey = publicKey
   announce.keyPubEncrypt = data.slice(0, 32)
   announce.keyPubSignature = data.slice(32, 64)
 

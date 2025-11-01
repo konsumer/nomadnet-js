@@ -1,6 +1,31 @@
 import { describe, test } from 'node:test'
 import { strict as assert } from 'node:assert'
-import { buildPacket, buildAnnounce, buildData, buildLxmf, buildProof, parsePacket, parseAnnounce, parseLxmf, parseProof, getDestinationHash, getMessageId, privateIdentity, publicIdentity, privateRatchet, publicRatchet, PACKET_DATA, PACKET_ANNOUNCE, PACKET_PROOF, CONTEXT_NONE, DEST_SINGLE, TRANSPORT_BROADCAST, TRANSPORT_TRANSPORT } from '../src/index.js'
+
+// prettier-ignore
+import {
+  buildPacket,
+  buildAnnounce,
+  buildData,
+  buildLxmf,
+  buildProof,
+  parsePacket,
+  parseAnnounce,
+  parseLxmf,
+  parseProof,
+  getDestinationHash,
+  getMessageId,
+  privateIdentity,
+  publicIdentity,
+  privateRatchet,
+  publicRatchet,
+  PACKET_DATA,
+  PACKET_ANNOUNCE,
+  PACKET_PROOF,
+  CONTEXT_NONE,
+  DEST_SINGLE,
+  TRANSPORT_BROADCAST,
+  TRANSPORT_TRANSPORT
+} from '../src/index.js'
 import { hexToBytes, bytesToHex, equalBytes } from '../src/utils.js'
 
 const encoder = new TextEncoder()
@@ -82,7 +107,7 @@ describe('buildAnnounce', () => {
     const name = 'lxmf.delivery'
     const appData = 'test app data'
 
-    const packet = buildAnnounce(identityPriv, identityPub, name, undefined, appData)
+    const packet = buildAnnounce(identityPriv, identityPub, undefined, appData, name)
 
     assert.ok(packet instanceof Uint8Array)
 
@@ -108,7 +133,7 @@ describe('buildAnnounce', () => {
     const ratchetPub = publicRatchet(ratchetPriv)
     const name = 'test.service'
 
-    const packet = buildAnnounce(identityPriv, identityPub, name, ratchetPub)
+    const packet = buildAnnounce(identityPriv, identityPub, ratchetPub, name)
 
     const parsed = parsePacket(packet)
     assert.equal(parsed.packetType, PACKET_ANNOUNCE)
@@ -285,7 +310,7 @@ describe('rount-trip', () => {
     const appData = hexToBytes('010203')
 
     // Build and parse
-    const built = buildAnnounce(identityPriv, identityPub, name, undefined, appData)
+    const built = buildAnnounce(identityPriv, identityPub, undefined, appData, name)
     const parsed = parsePacket(built)
     const announce = parseAnnounce(parsed)
 
