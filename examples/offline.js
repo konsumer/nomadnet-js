@@ -47,19 +47,6 @@ for (const packetBytes of packets) {
     } else {
       console.log('  Valid: No')
     }
-
-    // const displayPacket = { ...packet, ...announce }
-    // displayPacket.raw = bytesToHex(displayPacket.raw)
-    // displayPacket.destinationHash = bytesToHex(displayPacket.destinationHash)
-    // displayPacket.keyPubEncrypt = bytesToHex(displayPacket.keyPubEncrypt)
-    // displayPacket.keyPubSignature = bytesToHex(displayPacket.keyPubSignature)
-    // displayPacket.nameHash = bytesToHex(displayPacket.nameHash)
-    // displayPacket.randomHash = bytesToHex(displayPacket.randomHash)
-    // displayPacket.ratchetPub = bytesToHex(displayPacket.ratchetPub)
-    // displayPacket.signature = bytesToHex(displayPacket.signature)
-    // displayPacket.appData = bytesToHex(displayPacket.appData)
-    // displayPacket.data = bytesToHex(displayPacket.data)
-    // console.log(displayPacket)
   }
 
   // Decrypt DATA

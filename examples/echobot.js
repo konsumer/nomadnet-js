@@ -44,19 +44,6 @@ async function handleAnnounce(packet) {
     console.log(`  Saved (${Object.keys(announces).length}) announce from ${Buffer.from(packet.destinationHash).toString('hex')}`)
   } else {
     console.log('  Valid: No')
-    // console.log(`  Raw Bytes: ${bytesToHex(packet.raw)}`)
-    // console.log({
-    //   destinationHash: bytesToHex(packet.destinationHash),
-    //   sourceHash: bytesToHex(packet.sourceHash),
-    //   context: packet.context,
-    //   ifacFlag: packet.ifacFlag,
-    //   headerType: packet.headerType,
-    //   contextFlag: packet.contextFlag,
-    //   propagationType: packet.propagationType,
-    //   destinationType: packet.destinationType,
-    //   packetType: packet.packetType,
-    //   hops: packet.hops
-    // })
   }
 }
 
@@ -93,14 +80,15 @@ async function handleData(packet, websocket) {
         const senderAnnounce = announces[senderHash]
         if (senderAnnounce) {
           console.log(`  Echoing message back to ${senderHash}`)
+          const responseBytes = buildLxmfMessage(me, meDest, ratchet, senderAnnounce, {
+            title: 'Echo',
+            content: contentText,
+            timestamp: Math.floor(Date.now() / 1000)
+          })
+          const responseId = getMessageId(decodePacket(responseBytes))
+          console.log(`  Responded with message ${bytesToHex(responseId)}`)
 
-          websocket.send(
-            buildLxmfMessage(me, meDest, ratchet, senderAnnounce, {
-              title: 'Echo',
-              content: contentText,
-              timestamp: Math.floor(Date.now() / 1000)
-            })
-          )
+          websocket.send(responseBytes)
         } else {
           console.log(`Cannot echo: no announce found for ${senderHash}`)
         }

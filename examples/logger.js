@@ -23,6 +23,6 @@ packetTypeNames[PACKET_PROOF] = 'PROOF'
 ws.on('message', (data) => {
   const p = decodePacket(data)
   let destinationAddress = bytesToHex(p.destinationHash)
-  console.log(`${packetTypeNames[p.packetType]} (${destinationAddress}): `, bytesToHex(data))
+  console.log(`${packetTypeNames[p.packetType]} (${destinationAddress}):`, bytesToHex(data))
   // console.log(p)
 })
