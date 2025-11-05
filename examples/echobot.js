@@ -8,6 +8,7 @@ import {
   getDestinationHash,
   parseAnnounce,
   parseLxmf,
+  validateLxmf,
   parsePacket,
   parseProof,
   privateIdentity,
@@ -80,6 +81,10 @@ websocket.on('message', async (data) => {
               console.log(`  Sending Response`)
               const receiverRatchetPub = announces[themHex]?.ratchetPub
               const receiverPubBytes = announces[themHex]?.publicKey
+
+              const valid = validateLxmf(p, packet, receiverPubBytes)
+              console.log('  Valid', valid)
+
               websocket.send(
                 buildLxmf({
                   sourceHash: meDest,
