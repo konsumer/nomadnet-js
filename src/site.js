@@ -72,10 +72,16 @@ function handlePacket(data) {
 
   if (packet.packetType === rns.PACKET_DATA) {
     if (destinationHex === identity.destinationHex) {
-      const p = rns.parseLxmf(packet, identity.public, ratchets)
+      const { title, content, sourceHash } = rns.parseLxmf(packet, identity.public, ratchets)
       console.log(`  Message ID: ${bytesToHex(packet.packetHash)}`)
       console.log(`  Sending PROOF`)
       ws.send(rns.buildProof(packet, identity.private))
+      let msg = `<strong>From: </strong>${bytesToHex(sourceHash)}`
+      if (title) {
+        msg += `<br/><strong>Title: </strong>${title}`
+      }
+      msg += `<br/>${content}`
+      customElements.get('pop-notify').notifyHtml(msg)
     }
   }
 
@@ -92,8 +98,6 @@ function updatePeers() {
     const li = document.createElement('li')
     li.className = 'mono'
     li.textContent = announce.destinationHex
-
-    // TODO: disabled until I fix message-sending
     if (identity) {
       li.title = `Click to message ${announce.destinationHex}`
       li.className += ' pointer'
@@ -151,15 +155,17 @@ buttonCopy.addEventListener('click', (e) => {
 
 buttonSendMessage.addEventListener('click', (e) => {
   const theirAnnounce = peers[inputSendAddress.value]
+
   if (!theirAnnounce) {
     console.error(`Could not find announce for ${inputSendAddress.value}`)
     return
   }
+
   const message = {
     sourceHash: identity.destinationHash,
     senderPrivBytes: identity.private,
-    receiverPubBytes: new Uint8Array(Object.values(theirAnnounce.announce.publicKey)),
-    receiverRatchetPub: new Uint8Array(Object.values(theirAnnounce.announce.ratchetPub)),
+    receiverPubBytes: new Uint8Array(Object.values(theirAnnounce.publicKey)),
+    receiverRatchetPub: new Uint8Array(Object.values(theirAnnounce.ratchetPub)),
     title: inputSendTitle.value,
     content: inputSendBody.value,
     timestamp: Date.now() / 1000
@@ -167,6 +173,7 @@ buttonSendMessage.addEventListener('click', (e) => {
   console.log('send message', message)
   ws.send(rns.buildLxmf(message))
   dialogPopupMessage.close()
+  customElements.get('pop-notify').notifyHtml('Message sent.')
 })
 
 for (const b of document.querySelectorAll('.closeDialogPopupMessage')) {
