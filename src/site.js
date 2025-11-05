@@ -72,11 +72,13 @@ function handlePacket(data) {
 
   if (packet.packetType === rns.PACKET_DATA) {
     if (destinationHex === identity.destinationHex) {
-      const { title, content, sourceHash } = rns.parseLxmf(packet, identity.public, ratchets)
+      const { title, content, sourceHash, timestamp, signature } = rns.parseLxmf(packet, identity.public, ratchets)
+      const sourceHex = bytesToHex(sourceHash)
       console.log(`  Message ID: ${bytesToHex(packet.packetHash)}`)
       console.log(`  Sending PROOF`)
+      console.log('  Content', { title, content, from: sourceHex, timestamp: new Date(timestamp * 1000), signature })
       ws.send(rns.buildProof(packet, identity.private))
-      let msg = `<strong>From: </strong>${bytesToHex(sourceHash)}`
+      let msg = `<strong>From: </strong>${sourceHex}`
       if (title) {
         msg += `<br/><strong>Title: </strong>${title}`
       }
