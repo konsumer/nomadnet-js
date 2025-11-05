@@ -76,7 +76,7 @@ function handlePacket(data) {
       const sourceHex = bytesToHex(sourceHash)
       console.log(`  Message ID: ${bytesToHex(packet.packetHash)}`)
       console.log(`  Sending PROOF`)
-      console.log('  Content', { title, content, from: sourceHex, timestamp: new Date(timestamp * 1000), signature })
+      console.log('  Content', { title, content, from: sourceHex, timestamp: new Date(timestamp * 1000), signature: bytesToHex(signature) })
       ws.send(rns.buildProof(packet, identity.private))
       let msg = `<strong>From: </strong>${sourceHex}`
       if (title) {
