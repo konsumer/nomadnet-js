@@ -355,23 +355,40 @@ export function parseAnnounce(packet) {
   return announce
 }
 
-export function parseLxmf(packet, identityPub, ratchets = []) {
+export function parseLxmf(packet, identityPub, ratchets = [], senderPubKey = null) {
   const plaintext = messageDecrypt(packet, identityPub, ratchets)
   if (plaintext) {
     const sourceHash = plaintext.slice(0, 16)
     const signature = plaintext.slice(16, 80)
 
-    const [timestamp, title, content, fields] = msgunpack(plaintext.slice(80))
-    return {
+    const raw = plaintext.slice(80)
+    const [timestamp, title, content, fields] = msgunpack(raw)
+
+    const result = {
       sourceHash,
       signature,
       timestamp,
       title: decoder.decode(title),
       content: decoder.decode(content),
-      fields
+      fields,
+      raw,
+      valid: false
     }
+
+    // optional, if you set senderPubKey, check if it's valid
+    if (senderPubKey) {
+      result.valid = validateLxmf(result, packet, senderPubKey)
+    }
+
+    return result
   }
   return null
+}
+
+export function validateLxmf(lxmf, packet, senderPubKey) {
+  const messageId = sha256(concatBytes(packet.destinationHash, lxmf.sourceHash, lxmf.raw))
+  const messageToVerify = concatBytes(packet.destinationHash, lxmf.sourceHash, lxmf.raw, messageId)
+  return ed25519Validate(senderPubKey.slice(32, 64), lxmf.signature, messageToVerify)
 }
 
 export function parseProof(packet, identityPub, fullPacketHash) {

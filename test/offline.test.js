@@ -11,6 +11,7 @@ import {
   publicRatchet,
   parsePacket,
   parseLxmf,
+  validateLxmf,
   parseAnnounce,
   parseProof,
   messageDecrypt,
@@ -154,7 +155,8 @@ describe('LXMF', () => {
     const identity = recipients[packet.destinationHash]
     assert.ok(identity)
 
-    const { sourceHash, signature, timestamp, title, content, fields } = parseLxmf(packet, identity[1], ratchets)
+    const message = parseLxmf(packet, identity[1], ratchets)
+    const { sourceHash, signature, timestamp, title, content, fields } = message
 
     assert.deepEqual(sourceHash, hexToBytes('072ec44973a8dee8e28d230fb4af8fe4'))
     assert.equal(bytesToHex(signature), '7b9beae3f07ab3255f0c77fe295ddca70b032fd45735252025eb32dcfe9b278a9f1891ef96d2291a9f8289de000ca695d4586c8d1a846100621f01aa73134a00')
@@ -162,6 +164,11 @@ describe('LXMF', () => {
     assert.equal(title, '')
     assert.equal(content, 'hello from A')
     assert.deepEqual(fields, {})
+
+    const sender = recipients[sourceHash]
+    assert.ok(sender, 'valid sender')
+    const valid = validateLxmf(message, packet, sender[1])
+    assert.ok(valid, 'valid message')
   })
 
   test('d7c0e833f0cbde9f9133cd9e7d508b1a (A -> B)', () => {
@@ -173,7 +180,8 @@ describe('LXMF', () => {
     const identity = recipients[packet.destinationHash]
     assert.ok(identity)
 
-    const { sourceHash, signature, timestamp, title, content, fields } = parseLxmf(packet, identity[1], ratchets)
+    const message = parseLxmf(packet, identity[1], ratchets)
+    const { sourceHash, signature, timestamp, title, content, fields } = message
 
     assert.deepEqual(sourceHash, hexToBytes('76a93cda889a8c0a88451e02d53fd8b9'))
     assert.equal(bytesToHex(signature), '164bd6078866c67d5997ec8871d60125b24b4778be092c7ba6b5a20c3dad7a1c98a0382d4d77771edf93c96d78a668a962804a8009220d5ff3e8e9912718c809')
@@ -181,6 +189,11 @@ describe('LXMF', () => {
     assert.equal(title, '')
     assert.equal(content, 'hello from B')
     assert.deepEqual(fields, {})
+
+    const sender = recipients[sourceHash]
+    assert.ok(sender, 'valid sender')
+    const valid = validateLxmf(message, packet, sender[1])
+    assert.ok(valid, 'valid message')
   })
 })
 

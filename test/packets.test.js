@@ -11,6 +11,7 @@ import {
   parsePacket,
   parseAnnounce,
   parseLxmf,
+  validateLxmf,
   parseProof,
   getDestinationHash,
   getMessageId,
@@ -227,6 +228,9 @@ describe('buildLxmf', () => {
     assert.equal(lxmf.title, title)
     assert.equal(lxmf.content, content)
     assert.deepEqual(lxmf.fields, fields)
+
+    const valid = validateLxmf(lxmf, parsed, senderPub)
+    assert.ok(valid, 'valid message')
   })
 
   test('buildLxmf with implicit ratchet', () => {
@@ -257,6 +261,9 @@ describe('buildLxmf', () => {
     assert.ok(lxmf, 'Should decrypt with implicit ratchet')
     assert.equal(lxmf.title, 'Test')
     assert.equal(lxmf.content, 'Content')
+
+    const valid = validateLxmf(lxmf, parsed, senderPub)
+    assert.ok(valid, 'valid message')
   })
 })
 
@@ -346,10 +353,11 @@ describe('rount-trip', () => {
 
     // 2. Bob receives and decrypts
     const messageParsed = parsePacket(message)
-    const lxmf = parseLxmf(messageParsed, bobPub, [bobRatchetPriv])
+    const lxmf = parseLxmf(messageParsed, bobPub, [bobRatchetPriv], alicePub)
     assert.ok(lxmf)
     assert.equal(lxmf.title, 'Hello')
     assert.equal(lxmf.content, 'Test message')
+    assert.ok(lxmf.valid, 'valid message')
 
     // 3. Bob sends proof back to Alice
     const proof = buildProof(message, bobPriv)
