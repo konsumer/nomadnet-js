@@ -21,6 +21,7 @@ const dialogPopupMessage = document.getElementById('dialogPopupMessage')
 const inputSendAddress = document.getElementById('inputSendAddress')
 const buttonSendMessage = document.getElementById('buttonSendMessage')
 const inputSendBody = document.getElementById('inputSendBody')
+const inputSendTitle = document.getElementById('inputSendTitle')
 
 const packetTypeNames = {}
 packetTypeNames[rns.PACKET_DATA] = 'DATA'
@@ -93,12 +94,13 @@ function updatePeers() {
     li.textContent = announce.destinationHex
 
     // TODO: disabled until I fix message-sending
-    if (identity && false) {
+    if (identity) {
       li.title = `Click to message ${announce.destinationHex}`
       li.className += ' pointer'
       li.onclick = () => {
         inputSendAddress.value = announce.destinationHex
         inputSendBody.value = ''
+        inputSendTitle.value = ''
         dialogPopupMessage.showModal()
       }
     }
@@ -148,15 +150,23 @@ buttonCopy.addEventListener('click', (e) => {
 })
 
 buttonSendMessage.addEventListener('click', (e) => {
-  const message = {
-    from: identity,
-    to: inputSendAddress.value,
-    body: inputSendBody.value
+  const theirAnnounce = peers[inputSendAddress.value]
+  if (!theirAnnounce) {
+    console.error(`Could not find announce for ${inputSendAddress.value}`)
+    return
   }
-
-  // TODO: actually build & send message
-
+  const message = {
+    sourceHash: identity.destinationHash,
+    senderPrivBytes: identity.private,
+    receiverPubBytes: new Uint8Array(Object.values(theirAnnounce.announce.publicKey)),
+    receiverRatchetPub: new Uint8Array(Object.values(theirAnnounce.announce.ratchetPub)),
+    title: inputSendTitle.value,
+    content: inputSendBody.value,
+    timestamp: Date.now() / 1000
+  }
   console.log('send message', message)
+  ws.send(rns.buildLxmf(message))
+  dialogPopupMessage.close()
 })
 
 for (const b of document.querySelectorAll('.closeDialogPopupMessage')) {
