@@ -58,7 +58,8 @@ websocket.on('message', async (data) => {
           const announce = parseAnnounce(packet)
           console.log('  Valid:', announce.valid)
           if (announce.valid) {
-            announces[packet.destinationHash] = { ...packet, ...announce }
+            const themHex = bytesToHex(packet.destinationHash)
+            announces[themHex] = { ...packet, ...announce }
           }
         }
         break
@@ -72,15 +73,26 @@ websocket.on('message', async (data) => {
 
           if (p) {
             const { sourceHash, title, content } = p
-            console.log('  Parse:', JSON.stringify({ from: bytesToHex(sourceHash), title, content }))
+            const themHex = bytesToHex(sourceHash)
+            console.log('  Parse:', JSON.stringify({ from: themHex, title, content }))
 
-            if (announces[packet.destinationHash]) {
+            if (announces[themHex]) {
               console.log(`  Sending Response`)
-              const receiverRatchetPub = announces[packet.destinationHash]?.ratchetPub
-              const receiverPubBytes = announces[packet.destinationHash]?.publicKey
-              websocket.send(buildLxmf({ sourceHash: meHash, senderPrivBytes: me, receiverPubBytes, receiverRatchetPub, title: 'EchoBot', content }))
+              const receiverRatchetPub = announces[themHex]?.ratchetPub
+              const receiverPubBytes = announces[themHex]?.publicKey
+              websocket.send(
+                buildLxmf({
+                  sourceHash: meDest,
+                  senderPrivBytes: me,
+                  receiverPubBytes,
+                  receiverRatchetPub,
+                  title: 'EchoBot',
+                  content,
+                  timestamp: Date.now() / 1000
+                })
+              )
             } else {
-              console.log(`  Have not received an announce for ${bytesToHex(sourceHash)}`)
+              console.log(`  Have not received an announce for ${themHex}`)
             }
           } else {
             console.log('  Parse: No')

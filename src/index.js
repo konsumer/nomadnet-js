@@ -171,24 +171,23 @@ export function buildData(destinationHash, data, context = CONTEXT_NONE, transpo
 
 // build packet-bytes for LXMF DATA packet
 export function buildLxmf({ sourceHash, senderPrivBytes, receiverPubBytes, receiverRatchetPub, timestamp, title = '', content = '', fields = {} }) {
-  // Encode LXMF message content
   const lxmfContent = msgpack([timestamp, encoder.encode(title), encoder.encode(content), fields])
 
-  // Create plaintext: sourceHash + signature + msgpack content
-  // We need to sign the message first
-  const messageToSign = concatBytes(sourceHash, lxmfContent)
-  const signingPrivKey = senderPrivBytes.slice(32, 64)
-  const signature = ed25519Sign(messageToSign, signingPrivKey)
+  // Get the destination hash
+  const destinationHash = getDestinationHash(receiverPubBytes, 'lxmf.delivery')
 
+  // Calculate message-id: SHA-256(Destination + Source + Payload)
+  const messageId = sha256(concatBytes(destinationHash, sourceHash, lxmfContent))
+
+  // Sign: Destination + Source + Payload + message-id
+  const messageToSign = concatBytes(destinationHash, sourceHash, lxmfContent, messageId)
+  const signature = ed25519Sign(messageToSign, senderPrivBytes.slice(32, 64))
+
+  // Build plaintext: Source + Signature + Payload
   const plaintext = concatBytes(sourceHash, signature, lxmfContent)
 
-  // Encrypt the message
+  // Encrypt and build packet
   const encrypted = messageEncrypt(plaintext, receiverPubBytes, receiverRatchetPub)
-
-  // Get destination hash for receiver
-  const destinationHash = sha256(receiverPubBytes).slice(0, 16)
-
-  // Build DATA packet with LXMF context
   return buildData(destinationHash, encrypted, CONTEXT_NONE)
 }
 
@@ -361,6 +360,7 @@ export function parseLxmf(packet, identityPub, ratchets = []) {
   if (plaintext) {
     const sourceHash = plaintext.slice(0, 16)
     const signature = plaintext.slice(16, 80)
+
     const [timestamp, title, content, fields] = msgunpack(plaintext.slice(80))
     return {
       sourceHash,

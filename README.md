@@ -28,7 +28,7 @@ These clients (and the examples) are configured to log & interact with a remote 
 
 Now, add this to your config:
 
-```toml
+```ini
 [[Konsumer Websocket]]
 type = WebsocketClientInterface
 interface_enabled = True

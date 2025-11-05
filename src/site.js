@@ -43,25 +43,25 @@ function announce() {
     if (!ratchetPub) {
       addRatchet()
     }
-    ws.send(rns.buildAnnounce(identity, identity.destinationHash, 'lxmf.delivery', ratchetPub))
+    ws.send(rns.buildAnnounce(identity.private, identity.public, ratchetPub))
   }
 }
 
 // add a new ratchet
 function addRatchet() {
-  const ratchet = rns.ratchetCreateNew()
-  ratchetPub = rns.ratchetGetPublic(ratchet)
+  const ratchet = rns.privateRatchet()
+  ratchetPub = rns.publicRatchet(ratchet)
   ratchets.push(ratchet)
 }
 
 // handle an incoming packet
 function handlePacket(data) {
-  const packet = rns.packetUnpack(new Uint8Array(data))
+  const packet = rns.parsePacket(new Uint8Array(data))
   const destinationHex = bytesToHex(packet.destinationHash)
   console.log(`${packetTypeNames[packet.packetType] || 'UNKNOWN'} (${destinationHex})`)
 
   if (packet.packetType === rns.PACKET_ANNOUNCE) {
-    const announce = rns.announceParse(packet)
+    const announce = rns.parseAnnounce(packet)
     console.log(`  Valid: ${announce.valid ? 'Yes' : 'No'}`)
     if (announce.valid) {
       peers[destinationHex] = { ...packet, ...announce, destinationHex }
@@ -71,34 +71,16 @@ function handlePacket(data) {
 
   if (packet.packetType === rns.PACKET_DATA) {
     if (destinationHex === identity.destinationHex) {
-      const messageId = rns.getMessageId(packet)
-      console.log(`sending PROOF (${bytesToHex(messageId)})`)
-      ws.send(rns.buildProof(identity, packet, messageId))
-      const message = rns.parseLxmfMessage(rns.messageDecrypt(packet, identity, ratchets))
-      message.sourceHex = bytesToHex(message.sourceHash)
-      const title = decoder.decode(message.title)
-      const content = decoder.decode(message.content)
-      customElements.get('pop-notify').notifyHtml(title.trim() === '' ? `<strong>${message.sourceHex}</strong><br/>${content}` : `<strong>${message.sourceHex}</strong><br/><strong>${title}</strong><br/>${content}`)
-      console.log({ ...message, title, content, timestamp: new Date(message.timestamp * 1000) })
+      const p = rns.parseLxmf(packet, identity.public, ratchets)
+      console.log(`  Message ID: ${bytesToHex(packet.packetHash)}`)
+      console.log(`  Sending PROOF`)
+      ws.send(rns.buildProof(packet, identity.private))
     }
   }
 
   if (packet.packetType === rns.PACKET_PROOF) {
     // TODO: verify PROOF
   }
-}
-
-let ws
-function connect() {
-  ws = new WebSocket(WS_URL)
-  ws.binaryType = 'arraybuffer'
-  ws.addEventListener('message', (e) => handlePacket(e.data))
-  ws.addEventListener('error', (e) => console.error(e))
-  ws.addEventListener('close', (e) => {
-    if (ws) {
-      setTimeout(connect, 1000)
-    }
-  })
 }
 
 // update the UI list of peers
@@ -132,13 +114,23 @@ buttonGenerate.addEventListener('click', (e) => {
 
 buttonAnnounce.addEventListener('click', announce)
 
+buttonDeletePeers.addEventListener('click', (e) => {
+  localStorage.peers = JSON.stringify('{}')
+  peers = {}
+  updatePeers()
+})
+
 buttonSet.addEventListener('click', (e) => {
   if (inputPrivateKey.value?.length !== 128 || /[^0-9a-fA-F]/.test(inputPrivateKey.value)) {
     alert('Please enter or generate a valid private-key.')
   } else {
-    identity = rns.getIdentityFromBytes(hexToBytes(inputPrivateKey.value))
-    identity.destinationHash = rns.getDestinationHash(identity, 'lxmf', 'delivery')
+    identity = {
+      private: rns.privateIdentity()
+    }
+    identity.public = rns.publicIdentity(identity.private)
+    identity.destinationHash = rns.getDestinationHash(identity.public)
     identity.destinationHex = bytesToHex(identity.destinationHash)
+
     privkeyHolder.remove()
     lxmfAddress.value = identity.destinationHex
     lxmfAddress.parentElement.removeAttribute('hidden')
@@ -147,12 +139,6 @@ buttonSet.addEventListener('click', (e) => {
     // update the click-handlers of peers becayuse now you have an identity
     updatePeers()
   }
-})
-
-buttonDeletePeers.addEventListener('click', (e) => {
-  localStorage.peers = JSON.stringify('{}')
-  peers = {}
-  updatePeers()
 })
 
 buttonCopy.addEventListener('click', (e) => {
@@ -179,5 +165,14 @@ for (const b of document.querySelectorAll('.closeDialogPopupMessage')) {
   })
 }
 
-connect()
+const ws = new WebSocket(WS_URL)
+ws.binaryType = 'arraybuffer'
+ws.addEventListener('message', (e) => handlePacket(e.data))
+ws.addEventListener('error', (e) => console.error(e))
+ws.addEventListener('close', (e) => {
+  if (ws) {
+    setTimeout(connect, 1000)
+  }
+})
+
 updatePeers()
