@@ -296,7 +296,7 @@ describe('LXMF', () => {
     const timestamp = 1234567890.0
     const fields = { custom: 'data' }
 
-    const lxmf_msg = lxmf_build(content, sender_priv, receiver_dest, null, timestamp, fields)
+    const lxmf_msg = lxmf_build(content, sender_priv, receiver_dest, null, timestamp, null, fields)
     assert.ok(lxmf_msg.length >= 80)
   })
 
@@ -391,7 +391,9 @@ describe('LXMF', () => {
 
     assert.notEqual(parsed, false)
     assert.deepEqual(parsed.source_hash, sender_dest)
-    assert.equal(parsed.content, content)
+    // Content is now Uint8Array bytes, decode to compare
+    const decoder = new TextDecoder()
+    assert.equal(decoder.decode(parsed.content), content)
   })
 })
 
@@ -499,10 +501,12 @@ describe('LXMF Integration', () => {
     assert.notEqual(decrypted, null)
     const parsed = lxmf_parse(decrypted, bob_dest, alice_pub)
     assert.notEqual(parsed, false)
-    assert.equal(parsed.content, text_content)
+    // Content is now Uint8Array bytes, decode to compare
+    const decoder = new TextDecoder()
+    assert.equal(decoder.decode(parsed.content), text_content)
 
-    // Bob echoes back - MUST preserve string type
-    const echo_content = parsed.content // Keep as string!
+    // Bob echoes back - parsed.content is Uint8Array, can pass directly or as string
+    const echo_content = parsed.content // Keep as bytes
     const echo_lxmf = lxmf_build(echo_content, bob_priv, alice_dest)
     const echo_data = build_data(echo_lxmf, alice_pub, alice_ratchet_pub)
     const echo_packet = packet_unpack(echo_data)
@@ -512,7 +516,8 @@ describe('LXMF Integration', () => {
     assert.notEqual(echo_decrypted, null)
     const echo_parsed = lxmf_parse(echo_decrypted, alice_dest, bob_pub)
     assert.notEqual(echo_parsed, false)
-    assert.equal(echo_parsed.content, text_content)
-    assert.equal(typeof echo_parsed.content, 'string')
+    // Content is now Uint8Array bytes, decode to compare
+    assert.equal(decoder.decode(echo_parsed.content), text_content)
+    assert.ok(echo_parsed.content instanceof Uint8Array)
   })
 })

@@ -28,6 +28,8 @@ const packet_names = {
   [PACKET_PROOF]: 'PROOF'
 }
 
+const decoder = new TextDecoder()
+
 let ws
 let identity = null
 let ratchet_priv = null
@@ -55,7 +57,7 @@ function announce() {
 }
 
 // Handle incoming packets
-function handlePacket(packet_bytes) {
+async function handlePacket(packet_bytes) {
   const packet = packet_unpack(new Uint8Array(packet_bytes))
   const destinationHex = toHex(packet.destination_hash)
   console.log(`${packet_names[packet.packet_type] || 'UNKNOWN'} (${destinationHex})`)
@@ -79,7 +81,7 @@ function handlePacket(packet_bytes) {
       const dest_hex = toHex(packet.destination_hash)
 
       if (dest_hex === me_dest_hex) {
-        const data = message_decrypt(packet, identity.public, [ratchet_priv])
+        const data = await message_decrypt(packet, identity.public, [ratchet_priv])
         if (!data) {
           console.log('  Could not decrypt')
           return
@@ -88,32 +90,40 @@ function handlePacket(packet_bytes) {
         // Parse LXMF message - need sender's announce for public key
         const source_hash = data.slice(0, 16)
         const source_hash_hex = toHex(source_hash)
+        console.log(`  Looking for sender: ${source_hash_hex}`)
+        console.log(`  Known peers:`, Object.keys(peers))
         const sender_announce = peers[source_hash_hex]
 
         if (!sender_announce) {
-          console.log('  Unknown sender')
+          console.log('  Unknown sender - need to receive their ANNOUNCE first')
           return
         }
 
-        const lxmf = lxmf_parse(data, identity.destination_hash, sender_announce.public_key)
+        // Convert public_key from localStorage object to Uint8Array
+        const sender_public_key = sender_announce.public_key instanceof Uint8Array ? sender_announce.public_key : new Uint8Array(Object.values(sender_announce.public_key))
+
+        const lxmf = lxmf_parse(data, identity.destination_hash, sender_public_key)
         if (!lxmf || !lxmf.valid) {
           console.log('  Invalid LXMF message')
           return
         }
 
+        const content_text = lxmf.content?.length ? decoder.decode(lxmf.content) : '(no content)'
+        const title_text = lxmf.title?.length ? decoder.decode(lxmf.title) : '(no title)'
+
         console.log(`  From: ${source_hash_hex.slice(0, 16)}...`)
-        console.log(`  Title: ${lxmf.title || '(no title)'}`)
-        console.log(`  Content: ${lxmf.content || '(no content)'}`)
+        console.log(`  Title: ${title_text}`)
+        console.log(`  Content: ${content_text}`)
 
         // Send PROOF back
         ws.send(build_proof(packet.raw, identity.private))
 
         // Show notification
         let msg = `<strong>From: </strong>${source_hash_hex.slice(0, 16)}...`
-        if (lxmf.title) {
-          msg += `<br/><strong>Title: </strong>${lxmf.title}`
+        if (lxmf.title?.length) {
+          msg += `<br/><strong>Title: </strong>${title_text}`
         }
-        msg += `<br/>${lxmf.content}`
+        msg += `<br/>${content_text}`
         customElements.get('pop-notify').notifyHtml(msg)
       }
     }
@@ -220,7 +230,7 @@ buttonCopy.addEventListener('click', () => {
   })
 })
 
-buttonSendMessage.addEventListener('click', () => {
+buttonSendMessage.addEventListener('click', async () => {
   const dest_hex = inputSendAddress.value
   const theirAnnounce = peers[dest_hex]
 
@@ -237,19 +247,24 @@ buttonSendMessage.addEventListener('click', () => {
   }
 
   try {
-    const destination_hash = get_identity_destination_hash(theirAnnounce.public_key)
+    // Convert public_key and ratchet from localStorage objects to Uint8Array
+    const public_key = theirAnnounce.public_key instanceof Uint8Array ? theirAnnounce.public_key : new Uint8Array(Object.values(theirAnnounce.public_key))
+    const ratchet = theirAnnounce.ratchet instanceof Uint8Array ? theirAnnounce.ratchet : new Uint8Array(Object.values(theirAnnounce.ratchet))
 
-    // Build LXMF message with title in second position (as empty bytes)
-    const lxmf_message = lxmf_build(inputSendBody.value, identity.private, destination_hash, identity.destination_hash)
+    const destination_hash = get_identity_destination_hash(public_key)
+
+    // Build LXMF message - content and title should be strings
+    const title = inputSendTitle.value || ''
+    const lxmf_message = lxmf_build(inputSendBody.value, identity.private, destination_hash, identity.destination_hash, null, title)
 
     // Build DATA packet
-    const data_packet = build_data(lxmf_message, theirAnnounce.public_key, theirAnnounce.ratchet)
+    const data_packet = await build_data(lxmf_message, public_key, ratchet)
 
     // Store sent message for PROOF validation
     const response_packet = packet_unpack(data_packet)
     sent_messages.set(toHex(response_packet.packet_hash), {
       packet_bytes: data_packet,
-      sender_pub: theirAnnounce.public_key
+      sender_pub: public_key
     })
 
     ws.send(data_packet)

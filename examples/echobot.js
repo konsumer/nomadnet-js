@@ -132,7 +132,7 @@ async function packetHandler(ws, me_priv, me_pub, me_dest, ratchet_priv, ratchet
               // console.log('  Computed sender dest from pub key:', toHex(response_destination))
               // console.log('  Match with LXMF source_hash?', toHex(lxmf.source_hash) === toHex(response_destination))
 
-              const lxmf_response = lxmf_build(response_content, me_priv, response_destination, me_dest, null, lxmf.fields)
+              const lxmf_response = lxmf_build(response_content, me_priv, response_destination, me_dest, null, lxmf.title, lxmf.fields)
 
               // console.log('  LXMF response source hash (bytes 0-16):', toHex(lxmf_response.slice(0, 16)))
               // console.log('  LXMF response signature (bytes 16-80):', toHex(lxmf_response.slice(16, 80)))

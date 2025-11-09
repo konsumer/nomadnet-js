@@ -426,9 +426,22 @@ export function lxmf_parse(decrypted_data, packet_destination_hash, sender_pub) 
     }
 
     const timestamp = msgpack_data[0]
-    const title = msgpack_data[1]
-    const content = msgpack_data[2]
+    let title = msgpack_data[1]
+    let content = msgpack_data[2]
     const fields = msgpack_data.length > 3 ? msgpack_data[3] : {}
+
+    // Title and content should be Uint8Array (bytes), not strings
+    // If they're already Uint8Array, keep them. If Buffer, convert to Uint8Array
+    if (title && !(title instanceof Uint8Array)) {
+      if (title.constructor.name === 'Buffer') {
+        title = new Uint8Array(title)
+      }
+    }
+    if (content && !(content instanceof Uint8Array)) {
+      if (content.constructor.name === 'Buffer') {
+        content = new Uint8Array(content)
+      }
+    }
 
     // Verify LXMF signature
     const message_id = sha256(concat(packet_destination_hash, source_hash, msgpack_raw))
@@ -454,9 +467,15 @@ export function lxmf_parse(decrypted_data, packet_destination_hash, sender_pub) 
 /**
  * Build LXMF message
  */
-export function lxmf_build(content, source_priv, destination_hash, source_hash = null, timestamp = null, fields = null) {
+export function lxmf_build(content, source_priv, destination_hash, source_hash = null, timestamp = null, title = null, fields = null) {
   if (timestamp === null) {
     timestamp = Date.now() / 1000
+  }
+  if (title === null || title === '') {
+    title = new Uint8Array(0)
+  } else if (typeof title === 'string') {
+    // Convert string to UTF-8 bytes for msgpack
+    title = new TextEncoder().encode(title)
   }
   if (fields === null) {
     fields = {}
@@ -465,9 +484,23 @@ export function lxmf_build(content, source_priv, destination_hash, source_hash =
     source_hash = get_identity_destination_hash(public_identity(source_priv))
   }
 
-  // Build msgpack: [timestamp, destination, content, fields]
-  const msgpack_data = [timestamp, new Uint8Array(0), content, fields]
-  const msgpack_raw = pack(msgpack_data)
+  // Convert content to bytes if it's a string
+  if (typeof content === 'string') {
+    if (content === '') {
+      content = new Uint8Array(0)
+    } else {
+      content = new TextEncoder().encode(content)
+    }
+  }
+
+  // Build msgpack: [timestamp, title, content, fields]
+  const msgpack_data = [timestamp, title, content, fields]
+  let msgpack_raw = pack(msgpack_data)
+
+  // Ensure msgpack_raw is Uint8Array (msgpackr may return Buffer in Node.js)
+  if (!(msgpack_raw instanceof Uint8Array)) {
+    msgpack_raw = new Uint8Array(msgpack_raw)
+  }
 
   // Sign
   const message_id = sha256(concat(destination_hash, source_hash, msgpack_raw))
