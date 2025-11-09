@@ -1,5 +1,30 @@
-import { test, describe } from 'node:test'
-import { PACKET_DATA, PACKET_ANNOUNCE, PACKET_PROOF, DEST_SINGLE, DEST_GROUP, CONTEXT_NONE, CONTEXT_RESOURCE, packet_pack, packet_unpack, build_announce, build_data, build_proof, validate_announce, validate_proof, message_decrypt, lxmf_parse, lxmf_build, get_identity_destination_hash, private_identity, public_identity, private_ratchet, public_ratchet } from '../src/index.js'
+import { describe, test } from 'node:test'
+
+// prettier-ignore
+import {
+    build_announce,
+    build_data,
+    build_proof,
+    CONTEXT_NONE,
+    CONTEXT_RESOURCE,
+    DEST_GROUP,
+    DEST_SINGLE,
+    get_identity_destination_hash,
+    lxmf_build,
+    lxmf_parse,
+    message_decrypt,
+    PACKET_ANNOUNCE,
+    PACKET_DATA,
+    packet_pack,
+    PACKET_PROOF,
+    packet_unpack,
+    private_identity,
+    private_ratchet,
+    public_identity,
+    public_ratchet,
+    validate_announce,
+    validate_proof
+} from '../src/index.js'
 
 describe('Packet Pack/Unpack', () => {
   test('packet_pack and packet_unpack roundtrip', ({ assert }) => {
@@ -117,7 +142,6 @@ describe('Build ANNOUNCE', () => {
 describe('Build DATA', () => {
   test('build_data basic encryption and decryption', ({ assert }) => {
     // Create sender and receiver identities
-    const sender_priv = private_identity()
     const receiver_priv = private_identity()
     const receiver_pub = public_identity(receiver_priv)
 
@@ -222,7 +246,6 @@ describe('End-to-End Flow', () => {
     const alice_priv = private_identity()
     const alice_pub = public_identity(alice_priv)
     const alice_ratchet_priv = private_ratchet()
-    const alice_ratchet_pub = public_ratchet(alice_ratchet_priv)
 
     const alice_announce = build_announce(alice_priv, null, null, alice_ratchet_priv)
     const alice_announce_packet = packet_unpack(alice_announce)
@@ -231,7 +254,6 @@ describe('End-to-End Flow', () => {
 
     // Bob creates identity
     const bob_priv = private_identity()
-    const bob_pub = public_identity(bob_priv)
 
     // Bob sends data to Alice using her announced ratchet
     const message = new TextEncoder().encode('Hello Alice!')
@@ -307,7 +329,6 @@ describe('LXMF', () => {
 
   test('lxmf_parse invalid signature', ({ assert }) => {
     const sender_priv = private_identity()
-    const sender_pub = public_identity(sender_priv)
     const wrong_pub = public_identity(private_identity())
     const receiver_dest = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
 
@@ -418,7 +439,6 @@ describe('LXMF Integration', () => {
     // Alice announces with ratchet
     const alice_announce = build_announce(alice_priv, null, null, alice_ratchet_priv)
     const alice_announce_packet = packet_unpack(alice_announce)
-    const alice_announce_info = validate_announce(alice_announce_packet)
 
     // Bob builds LXMF message to Alice
     const content = new TextEncoder().encode('Hello Alice from Bob!')

@@ -247,45 +247,6 @@ export async function hkdf(ikm, length, salt = null, info = null) {
 }
 
 /**
- * PKCS7 padding
- * @param {Uint8Array} data
- * @param {number} bs - Block size (default 16)
- * @returns {Uint8Array} Padded data
- */
-export function pkcs7_pad(data, bs = 16) {
-  const n = bs - (data.length % bs)
-  const result = new Uint8Array(data.length + n)
-  result.set(data)
-  result.fill(n, data.length)
-  return result
-}
-
-/**
- * PKCS7 unpadding
- * @param {Uint8Array} data
- * @returns {Uint8Array} Unpadded data
- */
-export function pkcs7_unpad(data) {
-  if (data.length === 0) {
-    return data
-  }
-
-  const padding_length = data[data.length - 1]
-  if (padding_length < 1 || padding_length > 16 || padding_length > data.length) {
-    return data
-  }
-
-  // Verify padding
-  for (let i = data.length - padding_length; i < data.length; i++) {
-    if (data[i] !== padding_length) {
-      return data
-    }
-  }
-
-  return data.slice(0, data.length - padding_length)
-}
-
-/**
  * AES-CBC encryption
  * @param {Uint8Array} key - 32-byte key
  * @param {Uint8Array} iv - 16-byte IV

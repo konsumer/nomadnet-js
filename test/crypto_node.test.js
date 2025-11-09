@@ -1,5 +1,22 @@
 import { test, describe } from 'node:test'
-import { private_identity, public_identity, private_ratchet, public_ratchet, sha256, hmac_sha256, hkdf, pkcs7_pad, pkcs7_unpad, aes_cbc_encrypt, aes_cbc_decrypt, ed25519_sign, ed25519_validate, ed25519_public_for_private, x25519_exchange, x25519_public_for_private } from '../src/crypto.node.js'
+
+// prettier-ignore
+import {
+  private_identity,
+  public_identity,
+  private_ratchet,
+  public_ratchet,
+  sha256,
+  hmac_sha256,
+  hkdf,
+  aes_cbc_encrypt,
+  aes_cbc_decrypt,
+  ed25519_sign,
+  ed25519_validate,
+  ed25519_public_for_private,
+  x25519_exchange,
+  x25519_public_for_private
+} from '../src/crypto.node.js'
 
 describe('NodeJS Encryption Helpers', () => {
   describe('Identity Key Generation', () => {
@@ -134,44 +151,6 @@ describe('NodeJS Encryption Helpers', () => {
       await assert.rejects(async () => {
         await hkdf(new Uint8Array(0), 32)
       })
-    })
-  })
-
-  describe('PKCS7 Padding', () => {
-    test('pkcs7_pad pads data to block size', ({ assert }) => {
-      const data = new TextEncoder().encode('hello')
-      const padded = pkcs7_pad(data, 16)
-      assert.equal(padded.length % 16, 0)
-      assert.deepEqual(padded.slice(0, data.length), data)
-
-      // Data that's already block-aligned
-      const aligned_data = new Uint8Array(16)
-      const padded_aligned = pkcs7_pad(aligned_data, 16)
-      assert.equal(padded_aligned.length, 32) // Should add full block of padding
-    })
-
-    test('pkcs7_unpad removes padding', ({ assert }) => {
-      const original = new TextEncoder().encode('hello')
-      const padded = pkcs7_pad(original, 16)
-      const unpadded = pkcs7_unpad(padded)
-      assert.deepEqual(unpadded, original)
-    })
-
-    test('pkcs7 pad/unpad roundtrip', ({ assert }) => {
-      const test_data = [
-        new TextEncoder().encode('short'),
-        new TextEncoder().encode('hello world'),
-        new TextEncoder().encode('this is a longer message for testing'),
-        new Uint8Array(0), // empty data
-        new Uint8Array(16).fill(120), // exactly one block
-        new Uint8Array(31).fill(120) // one byte short of two blocks
-      ]
-
-      for (const data of test_data) {
-        const padded = pkcs7_pad(data, 16)
-        const unpadded = pkcs7_unpad(padded)
-        assert.deepEqual(unpadded, data)
-      }
     })
   })
 

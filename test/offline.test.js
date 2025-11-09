@@ -5,21 +5,12 @@ import assert from 'node:assert'
 
 // prettier-ignore
 import {
-  build_announce,
-  build_proof,
   bytesToHex,
-  get_identity_destination_hash,
-  get_message_id,
   hexToBytes,
-  lxmf_build,
   lxmf_parse,
   message_decrypt,
-  packet_pack,
   packet_unpack,
-  private_identity,
-  private_ratchet,
   public_identity,
-  public_ratchet,
   validate_announce,
   validate_proof,
   PACKET_ANNOUNCE,
