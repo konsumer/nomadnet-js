@@ -3,8 +3,7 @@
 import 'pop-notify'
 import './site.css'
 
-import * as rns from '../src/index.js'
-import { bytesToHex, hexToBytes, randomBytes } from '@noble/curves/utils.js'
+import { private_identity, public_identity, private_ratchet, public_ratchet, packet_unpack, build_announce, build_data, build_proof, validate_announce, validate_proof, message_decrypt, lxmf_parse, lxmf_build, get_identity_destination_hash, PACKET_DATA, PACKET_ANNOUNCE, PACKET_PROOF, bytesToHex, hexToBytes } from '../src/index.js'
 
 const WS_URL = 'wss://signal.konsumer.workers.dev/ws/reticulum'
 
@@ -23,159 +22,245 @@ const buttonSendMessage = document.getElementById('buttonSendMessage')
 const inputSendBody = document.getElementById('inputSendBody')
 const inputSendTitle = document.getElementById('inputSendTitle')
 
-const packetTypeNames = {}
-packetTypeNames[rns.PACKET_DATA] = 'DATA'
-packetTypeNames[rns.PACKET_ANNOUNCE] = 'ANNOUNCE'
-packetTypeNames[rns.PACKET_LINKREQUEST] = 'LINKREQUEST'
-packetTypeNames[rns.PACKET_PROOF] = 'PROOF'
+const packet_names = {
+  [PACKET_DATA]: 'DATA',
+  [PACKET_ANNOUNCE]: 'ANNOUNCE',
+  [PACKET_PROOF]: 'PROOF'
+}
 
-const decoder = new TextDecoder()
-
-let identity
-const messages = {}
-const ratchets = []
-let ratchetPub
+let ws
+let identity = null
+let ratchet_priv = null
+let ratchet_pub = null
 let peers = JSON.parse(localStorage.peers || '{}')
+let sent_messages = new Map()
+
+// Convert Uint8Array to hex string
+function toHex(bytes) {
+  return bytesToHex(bytes)
+}
+
+// Convert hex string to Uint8Array
+function fromHex(hex) {
+  return hexToBytes(hex)
+}
 
 // ANNOUNCE yourself
 function announce() {
-  if (identity) {
-    console.log(`ANNOUNCE (${identity.destinationHex})`)
-    if (!ratchetPub) {
-      addRatchet()
-    }
-    ws.send(rns.buildAnnounce(identity.private, identity.public, ratchetPub))
+  if (identity && ws && ws.readyState === WebSocket.OPEN) {
+    console.log(`ANNOUNCE ${toHex(identity.destination_hash)}`)
+    const pkt = build_announce(identity.private, identity.public, identity.destination_hash, ratchet_priv, ratchet_pub)
+    ws.send(pkt)
   }
 }
 
-// add a new ratchet
-function addRatchet() {
-  const ratchet = rns.privateRatchet()
-  ratchetPub = rns.publicRatchet(ratchet)
-  ratchets.push(ratchet)
-}
+// Handle incoming packets
+function handlePacket(packet_bytes) {
+  const packet = packet_unpack(new Uint8Array(packet_bytes))
+  const destinationHex = toHex(packet.destination_hash)
+  console.log(`${packet_names[packet.packet_type] || 'UNKNOWN'} (${destinationHex})`)
 
-// handle an incoming packet
-function handlePacket(data) {
-  const packet = rns.parsePacket(new Uint8Array(data))
-  const destinationHex = bytesToHex(packet.destinationHash)
-  console.log(`${packetTypeNames[packet.packetType] || 'UNKNOWN'} (${destinationHex})`)
-
-  if (packet.packetType === rns.PACKET_ANNOUNCE) {
-    const announce = rns.parseAnnounce(packet)
-    console.log(`  Valid: ${announce.valid ? 'Yes' : 'No'}`)
-    if (announce.valid) {
-      peers[destinationHex] = { ...packet, ...announce, destinationHex }
+  try {
+    if (packet.packet_type === PACKET_ANNOUNCE) {
+      const announce = validate_announce(packet)
+      if (!announce) {
+        console.log('  Valid: False')
+        return
+      }
+      console.log('  Valid: True')
+      peers[destinationHex] = announce
       updatePeers()
     }
-  }
 
-  if (packet.packetType === rns.PACKET_DATA) {
-    if (destinationHex === identity.destinationHex) {
-      const { title, content, sourceHash, timestamp, signature } = rns.parseLxmf(packet, identity.public, ratchets)
-      const sourceHex = bytesToHex(sourceHash)
-      console.log(`  Message ID: ${bytesToHex(packet.packetHash)}`)
-      console.log(`  Sending PROOF`)
-      console.log('  Content', { title, content, from: sourceHex, timestamp: new Date(timestamp * 1000), signature: bytesToHex(signature) })
-      ws.send(rns.buildProof(packet, identity.private))
-      let msg = `<strong>From: </strong>${sourceHex}`
-      if (title) {
-        msg += `<br/><strong>Title: </strong>${title}`
+    if (packet.packet_type === PACKET_DATA) {
+      if (!identity) return
+
+      const me_dest_hex = toHex(identity.destination_hash)
+      const dest_hex = toHex(packet.destination_hash)
+
+      if (dest_hex === me_dest_hex) {
+        const data = message_decrypt(packet, identity.public, [ratchet_priv])
+        if (!data) {
+          console.log('  Could not decrypt')
+          return
+        }
+
+        // Parse LXMF message - need sender's announce for public key
+        const source_hash = data.slice(0, 16)
+        const source_hash_hex = toHex(source_hash)
+        const sender_announce = peers[source_hash_hex]
+
+        if (!sender_announce) {
+          console.log('  Unknown sender')
+          return
+        }
+
+        const lxmf = lxmf_parse(data, identity.destination_hash, sender_announce.public_key)
+        if (!lxmf || !lxmf.valid) {
+          console.log('  Invalid LXMF message')
+          return
+        }
+
+        console.log(`  From: ${source_hash_hex.slice(0, 16)}...`)
+        console.log(`  Title: ${lxmf.title || '(no title)'}`)
+        console.log(`  Content: ${lxmf.content || '(no content)'}`)
+
+        // Send PROOF back
+        ws.send(build_proof(packet.raw, identity.private))
+
+        // Show notification
+        let msg = `<strong>From: </strong>${source_hash_hex.slice(0, 16)}...`
+        if (lxmf.title) {
+          msg += `<br/><strong>Title: </strong>${lxmf.title}`
+        }
+        msg += `<br/>${lxmf.content}`
+        customElements.get('pop-notify').notifyHtml(msg)
       }
-      msg += `<br/>${content}`
-      customElements.get('pop-notify').notifyHtml(msg)
     }
-  }
 
-  if (packet.packetType === rns.PACKET_PROOF) {
-    // TODO: verify PROOF
+    if (packet.packet_type === PACKET_PROOF) {
+      // Validate PROOF against our sent messages
+      const truncated_msg_id = toHex(packet.destination_hash)
+
+      let msg_to_delete = null
+
+      for (const [msg_hash, msg_info] of sent_messages.entries()) {
+        if (msg_hash.startsWith(truncated_msg_id)) {
+          // Convert hex hash back to Uint8Array
+          const full_hash = fromHex(msg_hash)
+          const is_valid = validate_proof(packet, msg_info.sender_pub, full_hash)
+          if (is_valid) {
+            console.log('  Valid PROOF received')
+            msg_to_delete = msg_hash
+          }
+          break
+        }
+      }
+
+      if (msg_to_delete) {
+        sent_messages.delete(msg_to_delete)
+      }
+    }
+  } catch (e) {
+    console.log(`  Error: ${e.message}`)
   }
 }
 
-// update the UI list of peers
+// Update the UI list of peers
 function updatePeers() {
   localStorage.peers = JSON.stringify(peers)
   peerList.innerHTML = ''
-  Object.values(peers).forEach((announce) => {
+  Object.entries(peers).forEach(([destinationHex, announce]) => {
     const li = document.createElement('li')
     li.className = 'mono'
-    li.textContent = announce.destinationHex
+    li.textContent = destinationHex
     if (identity) {
-      li.title = `Click to message ${announce.destinationHex}`
+      li.title = `Click to message ${destinationHex}`
       li.className += ' pointer'
       li.onclick = () => {
-        inputSendAddress.value = announce.destinationHex
+        inputSendAddress.value = destinationHex
         inputSendBody.value = ''
         inputSendTitle.value = ''
         dialogPopupMessage.showModal()
       }
     }
-
     peerList.appendChild(li)
   })
 }
 
-buttonGenerate.addEventListener('click', (e) => {
-  inputPrivateKey.value = bytesToHex(randomBytes(64))
+// Generate random private key
+buttonGenerate.addEventListener('click', () => {
+  const priv = private_identity()
+  inputPrivateKey.value = toHex(priv)
   buttonCopy.classList.remove('hidden')
 })
 
 buttonAnnounce.addEventListener('click', announce)
 
-buttonDeletePeers.addEventListener('click', (e) => {
-  localStorage.peers = JSON.stringify('{}')
+buttonDeletePeers.addEventListener('click', () => {
+  localStorage.peers = '{}'
   peers = {}
   updatePeers()
 })
 
-buttonSet.addEventListener('click', (e) => {
+// Set identity and connect
+buttonSet.addEventListener('click', () => {
   if (inputPrivateKey.value?.length !== 128 || /[^0-9a-fA-F]/.test(inputPrivateKey.value)) {
     alert('Please enter or generate a valid private-key.')
   } else {
+    const priv = fromHex(inputPrivateKey.value)
+    const pub = public_identity(priv)
+    const dest = get_identity_destination_hash(pub)
+
     identity = {
-      private: rns.privateIdentity()
+      private: priv,
+      public: pub,
+      destination_hash: dest
     }
-    identity.public = rns.publicIdentity(identity.private)
-    identity.destinationHash = rns.getDestinationHash(identity.public)
-    identity.destinationHex = bytesToHex(identity.destinationHash)
+
+    ratchet_priv = private_ratchet()
+    ratchet_pub = public_ratchet(ratchet_priv)
 
     privkeyHolder.remove()
-    lxmfAddress.value = identity.destinationHex
+    lxmfAddress.value = toHex(dest)
     lxmfAddress.parentElement.removeAttribute('hidden')
-    setInterval(announce, 60000) // announce every minute
+
+    // Announce periodically
+    setInterval(announce, 60000)
     announce()
-    // update the click-handlers of peers becayuse now you have an identity
+
+    // Update the click-handlers of peers because now you have an identity
     updatePeers()
   }
 })
 
-buttonCopy.addEventListener('click', (e) => {
+buttonCopy.addEventListener('click', () => {
   navigator.clipboard.writeText(inputPrivateKey.value).then(() => {
     customElements.get('pop-notify').notifyHtml('Private key copied!')
   })
 })
 
-buttonSendMessage.addEventListener('click', (e) => {
-  const theirAnnounce = peers[inputSendAddress.value]
+buttonSendMessage.addEventListener('click', () => {
+  const dest_hex = inputSendAddress.value
+  const theirAnnounce = peers[dest_hex]
 
   if (!theirAnnounce) {
-    console.error(`Could not find announce for ${inputSendAddress.value}`)
+    console.error(`Could not find announce for ${dest_hex}`)
+    customElements.get('pop-notify').notifyHtml('Error: Unknown peer')
     return
   }
 
-  const message = {
-    sourceHash: identity.destinationHash,
-    senderPrivBytes: identity.private,
-    receiverPubBytes: new Uint8Array(Object.values(theirAnnounce.publicKey)),
-    receiverRatchetPub: new Uint8Array(Object.values(theirAnnounce.ratchetPub)),
-    title: inputSendTitle.value,
-    content: inputSendBody.value,
-    timestamp: Date.now() / 1000
+  if (!theirAnnounce.ratchet || theirAnnounce.ratchet.length === 0) {
+    console.error(`Peer ${dest_hex} has no ratchet`)
+    customElements.get('pop-notify').notifyHtml('Error: Peer has no ratchet')
+    return
   }
-  console.log('send message', message)
-  ws.send(rns.buildLxmf(message))
-  dialogPopupMessage.close()
-  customElements.get('pop-notify').notifyHtml('Message sent.')
+
+  try {
+    const destination_hash = get_identity_destination_hash(theirAnnounce.public_key)
+
+    // Build LXMF message with title in second position (as empty bytes)
+    const lxmf_message = lxmf_build(inputSendBody.value, identity.private, destination_hash, identity.destination_hash)
+
+    // Build DATA packet
+    const data_packet = build_data(lxmf_message, theirAnnounce.public_key, theirAnnounce.ratchet)
+
+    // Store sent message for PROOF validation
+    const response_packet = packet_unpack(data_packet)
+    sent_messages.set(toHex(response_packet.packet_hash), {
+      packet_bytes: data_packet,
+      sender_pub: theirAnnounce.public_key
+    })
+
+    ws.send(data_packet)
+
+    console.log(`Sent message to ${dest_hex.slice(0, 16)}...`)
+    dialogPopupMessage.close()
+    customElements.get('pop-notify').notifyHtml('Message sent.')
+  } catch (e) {
+    console.error('Send failed:', e)
+    customElements.get('pop-notify').notifyHtml(`Error: ${e.message}`)
+  }
 })
 
 for (const b of document.querySelectorAll('.closeDialogPopupMessage')) {
@@ -184,14 +269,28 @@ for (const b of document.querySelectorAll('.closeDialogPopupMessage')) {
   })
 }
 
-const ws = new WebSocket(WS_URL)
-ws.binaryType = 'arraybuffer'
-ws.addEventListener('message', (e) => handlePacket(e.data))
-ws.addEventListener('error', (e) => console.error(e))
-ws.addEventListener('close', (e) => {
-  if (ws) {
-    setTimeout(connect, 1000)
-  }
-})
+// WebSocket connection
+function connect() {
+  ws = new WebSocket(WS_URL)
+  ws.binaryType = 'arraybuffer'
 
+  ws.addEventListener('open', () => {
+    console.log(`Connected to ${WS_URL}`)
+    if (identity) {
+      announce()
+    }
+  })
+
+  ws.addEventListener('message', (e) => handlePacket(e.data))
+
+  ws.addEventListener('error', (e) => console.error('WebSocket error:', e))
+
+  ws.addEventListener('close', () => {
+    console.log('Disconnected. Reconnecting in 5 seconds...')
+    setTimeout(connect, 5000)
+  })
+}
+
+// Initialize
 updatePeers()
+connect()
