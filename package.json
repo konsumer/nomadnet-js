@@ -1,6 +1,6 @@
 {
   "name": "nomadnet",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "main": "index.js",
   "type": "module",
   "description": "Lightweight Reticulum library for JavaScript",
