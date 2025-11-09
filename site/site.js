@@ -28,15 +28,6 @@ const packet_names = {
   [PACKET_PROOF]: 'PROOF'
 }
 
-const decoder = new TextDecoder()
-
-let ws
-let identity = null
-let ratchet_priv = null
-let ratchet_pub = null
-let peers = JSON.parse(localStorage.peers || '{}')
-let sent_messages = new Map()
-
 // Convert Uint8Array to hex string
 function toHex(bytes) {
   return bytesToHex(bytes)
@@ -284,28 +275,32 @@ for (const b of document.querySelectorAll('.closeDialogPopupMessage')) {
   })
 }
 
+const decoder = new TextDecoder()
+
+let identity = null
+let ratchet_priv = null
+let ratchet_pub = null
+let sent_messages = new Map()
+
 // WebSocket connection
-function connect() {
-  ws = new WebSocket(WS_URL)
-  ws.binaryType = 'arraybuffer'
+function connect() {}
 
-  ws.addEventListener('open', () => {
-    console.log(`Connected to ${WS_URL}`)
-    if (identity) {
-      announce()
-    }
-  })
+const ws = new WebSocket(WS_URL)
+ws.binaryType = 'arraybuffer'
 
-  ws.addEventListener('message', (e) => handlePacket(e.data))
+ws.addEventListener('open', () => {
+  console.log(`Connected to ${WS_URL}`)
+  if (identity) {
+    announce()
+  }
+})
 
-  ws.addEventListener('error', (e) => console.error('WebSocket error:', e))
+ws.addEventListener('message', (e) => handlePacket(e.data))
+ws.addEventListener('error', (e) => console.error('WebSocket error:', e))
+ws.addEventListener('close', () => {
+  console.log('Disconnected. Reconnecting in 5 seconds...')
+  setTimeout(connect, 5000)
+})
 
-  ws.addEventListener('close', () => {
-    console.log('Disconnected. Reconnecting in 5 seconds...')
-    setTimeout(connect, 5000)
-  })
-}
-
-// Initialize
+let peers = JSON.parse(localStorage.peers || '{}')
 updatePeers()
-connect()
