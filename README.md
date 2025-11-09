@@ -10,6 +10,8 @@ I am doing all my testing over a websocket, so it will work on web & native in a
 
 See [notes](Reticulum.md) for structure of packets.
 
+I started working on a [no-dependency set of crypto helpers](crypto.node.js) as well, but library will need some rework to use it.
+
 ## examples
 
 I have some examples in [examples/](examples/)

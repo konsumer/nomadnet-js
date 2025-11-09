@@ -1,0 +1,24 @@
+Exception in thread Thread-13 (persist_job):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1043, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 994, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/konsumer/.venv-global/lib/python3.13/site-packages/RNS/Identity.py", line 322, in persist_job
+    os.replace(outpath, finalpath)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'demo/a/rns/storage/ratchets/332625f7b28d4d24caf121b0eeb0b85c.out' -> 'demo/a/rns/storage/ratchets/332625f7b28d4d24caf121b0eeb0b85c'
+Exception in thread Thread-567 (persist_job):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1043, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 994, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/konsumer/.venv-global/lib/python3.13/site-packages/RNS/Identity.py", line 322, in persist_job
+    os.replace(outpath, finalpath)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'demo/a/rns/storage/ratchets/2cf32ae7e66fe83cf62c6cafd1d37dd7.out' -> 'demo/a/rns/storage/ratchets/2cf32ae7e66fe83cf62c6cafd1d37dd7'

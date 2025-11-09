@@ -1,35 +1,32 @@
 {
   "name": "nomadnet",
-  "version": "0.0.2",
-  "description": "JavaScript library for communicating with NomadNet (LXMF over Reticulum)",
-  "main": "src/index.js",
+  "version": "0.1.0",
+  "main": "index.js",
   "type": "module",
+  "description": "Lightweight Reticulum library for JavaScript",
   "scripts": {
+    "test": "node --test test/*.test.js",
     "start": "vite",
-    "build": "vite build --base ./",
-    "test": "node --test"
+    "build": "vite build"
   },
   "keywords": [
-    "nomadnet",
     "reticulum",
-    "lxmf",
     "rns",
-    "mesh",
-    "networking",
-    "p2p"
+    "lxmf",
+    "mesh"
   ],
-  "author": "konsumer",
+  "author": "",
   "license": "MIT",
   "dependencies": {
     "@noble/ciphers": "^2.0.1",
-    "@noble/curves": "^2.0.0",
-    "@noble/hashes": "^2.0.1",
-    "msgpackr": "^1.11.5"
+    "@noble/curves": "^1.7.0",
+    "@noble/hashes": "^1.6.1",
+    "msgpackr": "^1.11.2"
   },
   "devDependencies": {
     "@picocss/pico": "^2.1.1",
     "pop-notify": "^1.2.1",
-    "vite": "^7.1.10",
-    "ws": "^8.18.3"
+    "vite": "^7.2.2",
+    "ws": "^8.18.0"
   }
 }
