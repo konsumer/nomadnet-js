@@ -1,6 +1,25 @@
 import WebSocket from 'ws'
-import { private_identity, public_identity, private_ratchet, public_ratchet } from '../crypto.js'
-import { PACKET_DATA, PACKET_ANNOUNCE, PACKET_PROOF, packet_unpack, build_announce, build_data, build_proof, validate_announce, validate_proof, message_decrypt, lxmf_parse, lxmf_build, get_identity_destination_hash } from '../rns_lite.js'
+
+// prettier-ignore
+import {
+  private_identity,
+  public_identity,
+  private_ratchet,
+  public_ratchet,
+  packet_unpack,
+  build_announce,
+  build_data,
+  build_proof,
+  validate_announce,
+  validate_proof,
+  message_decrypt,
+  lxmf_parse,
+  lxmf_build,
+  get_identity_destination_hash,
+  PACKET_DATA,
+  PACKET_ANNOUNCE,
+  PACKET_PROOF
+} from '../src/index.js'
 
 const WS_URL = 'wss://signal.konsumer.workers.dev/ws/reticulum'
 

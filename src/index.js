@@ -1,7 +1,25 @@
 // Lightweight Reticulum library for JavaScript
 
 import { pack, unpack } from 'msgpackr'
-import { private_identity, public_identity, private_ratchet, public_ratchet, sha256, hmac_sha256, hkdf, aes_cbc_encrypt, aes_cbc_decrypt, ed25519_sign, ed25519_validate, x25519_exchange, randomBytes, hexToBytes, bytesToHex } from './crypto.js'
+
+// prettier-ignore
+import {
+  private_identity,
+  public_identity,
+  private_ratchet,
+  public_ratchet,
+  sha256,
+  hmac_sha256,
+  hkdf,
+  aes_cbc_encrypt,
+  aes_cbc_decrypt,
+  ed25519_sign,
+  ed25519_validate,
+  x25519_exchange,
+  randomBytes,
+  hexToBytes,
+  bytesToHex
+} from './crypto.js'
 
 // Re-export useful functions
 export { private_identity, public_identity, private_ratchet, public_ratchet, hexToBytes, bytesToHex }
