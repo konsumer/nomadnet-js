@@ -139,9 +139,7 @@ describe('LXMF', () => {
 
     assert.equal(title, '')
     assert.equal(content, 'hello from A')
-    // Convert Map to object for comparison
-    const fields = message.fields instanceof Map ? Object.fromEntries(message.fields) : message.fields
-    assert.deepEqual(fields, {})
+    assert.deepEqual(message.fields, {})
 
     // Verify signature
     const sender = recipients[bytesToHex(message.source_hash)]
@@ -184,9 +182,7 @@ describe('LXMF', () => {
 
     assert.equal(title, '')
     assert.equal(content, 'hello from B')
-    // Convert Map to object for comparison
-    const fields = message.fields instanceof Map ? Object.fromEntries(message.fields) : message.fields
-    assert.deepEqual(fields, {})
+    assert.deepEqual(message.fields, {})
 
     // Verify signature
     const sender = recipients[bytesToHex(message.source_hash)]

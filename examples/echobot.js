@@ -1,3 +1,6 @@
+// Simple echobot that connects to a Reticulum network via WebSocket
+// It announces itself periodically, receives LXMF messages, and echoes them back
+
 import WebSocket from 'ws'
 
 // prettier-ignore
@@ -39,14 +42,24 @@ function toHex(bytes) {
 // Periodically ANNOUNCE
 async function announceHandler(ws, me_priv, me_pub, me_dest, ratchet_priv, ratchet_pub, interval = 30000) {
   while (ws.readyState === WebSocket.OPEN) {
-    console.log(`ANNOUNCE me ${toHex(me_dest)}`)
-    console.log(`  X25519 pub: ${toHex(me_pub.slice(0, 32))}`)
-    console.log(`  Ed25519 pub: ${toHex(me_pub.slice(32, 64))}`)
+    console.log(`ANNOUNCE ${toHex(me_dest)}`)
     const pkt = build_announce(me_priv, null, me_dest, ratchet_priv, ratchet_pub)
     ws.send(pkt)
     await new Promise((resolve) => setTimeout(resolve, interval))
   }
 }
+</parameter>
+
+<old_text line=63>
+    try {
+      if (packet.packet_type === PACKET_ANNOUNCE) {
+        const announce = validate_announce(packet)
+        if (!announce) {
+          throw new Error('Invalid ANNOUNCE')
+        }
+        console.log('  Valid: True')
+        announces.set(toHex(packet.destination_hash), announce)
+      }
 
 // Handle incoming packets
 async function packetHandler(ws, me_priv, me_pub, me_dest, ratchet_priv, ratchet_pub) {
@@ -75,83 +88,36 @@ async function packetHandler(ws, me_priv, me_pub, me_dest, ratchet_priv, ratchet
         const dest_hex = toHex(packet.destination_hash)
 
         if (dest_hex === me_dest_hex) {
-          const data = await message_decrypt(packet, me_pub, [ratchet_priv])
+          const data = message_decrypt(packet, me_pub, [ratchet_priv])
           if (!data) {
-            throw new Error('Invalid DATA - cannot decrypt')
+            return
           }
-          console.log('  For me: True')
 
           // Parse LXMF message - need sender's announce for public key
           const source_hash = data.slice(0, 16)
           const source_hash_hex = toHex(source_hash)
           const sender_announce = announces.get(source_hash_hex)
-
           if (!sender_announce) {
-            console.log(`  Sender ${source_hash_hex.slice(0, 16)}... not in announces`)
             return
           }
 
           const lxmf = lxmf_parse(data, me_dest, sender_announce.public_key)
-          if (!lxmf) {
-            console.log('  Invalid LXMF message')
+          if (!lxmf || !lxmf.valid) {
             return
           }
 
-          console.log(`  From: ${toHex(lxmf.source_hash)}`)
-          console.log(`  Timestamp: ${lxmf.timestamp}`)
+          console.log(`  From: ${source_hash_hex.slice(0, 16)}...`)
           console.log(`  Content: ${lxmf.content || '(no content)'}`)
-          console.log(`  Title: ${lxmf.title}`)
-          console.log(`  Fields:`, lxmf.fields)
-          console.log(`  Valid signature: ${lxmf.valid}`)
 
           // Send PROOF back
-          const proof_bytes = build_proof(packet.raw, me_priv)
-          ws.send(proof_bytes)
-          console.log('  Sent PROOF')
+          ws.send(build_proof(packet.raw, me_priv))
 
           // Send echo response DATA back to sender
           if (sender_announce.ratchet && sender_announce.ratchet.length > 0) {
             try {
-              // Build LXMF response message
-              // IMPORTANT: Preserve content type (string vs binary) to maintain msgpack encoding
-              // If content is a string, keep it as string. If binary, ensure it's Uint8Array
-              let response_content = lxmf.content || new Uint8Array(0)
-              if (typeof response_content !== 'string' && !(response_content instanceof Uint8Array)) {
-                // Convert Buffer to Uint8Array if needed
-                response_content = new Uint8Array(response_content)
-              }
-              console.log('  Echo content type:', typeof response_content === 'string' ? 'string' : response_content.constructor.name, 'length:', response_content.length)
-              console.log('  Fields type:', lxmf.fields.constructor.name)
-              console.log('  Incoming source_hash (sender dest):', toHex(lxmf.source_hash))
-              console.log('  Our dest:', toHex(me_dest))
-              console.log('  Sender pub key:', toHex(sender_announce.public_key))
-
-              // CRITICAL: The destination_hash we sign with MUST match what build_data will use
-              // build_data computes: get_identity_destination_hash(receiver_pub)
               const response_destination = get_identity_destination_hash(sender_announce.public_key)
-              console.log('  Computed sender dest from pub key:', toHex(response_destination))
-              console.log('  Match with LXMF source_hash?', toHex(lxmf.source_hash) === toHex(response_destination))
-
-              const lxmf_response = lxmf_build(
-                response_content,
-                me_priv,
-                response_destination, // MUST use computed destination from pub key!
-                me_dest, // Source = us
-                null, // timestamp - will be auto-generated
-                lxmf.fields // IMPORTANT: Pass through fields to preserve encoding
-              )
-
-              console.log('  LXMF response source hash (bytes 0-16):', toHex(lxmf_response.slice(0, 16)))
-              console.log('  LXMF response signature (bytes 16-80):', toHex(lxmf_response.slice(16, 80)))
-              console.log('  LXMF response msgpack first 50 bytes:', toHex(lxmf_response.slice(80, 130)))
-
-              // Encrypt and send
-              const response_data = await build_data(lxmf_response, sender_announce.public_key, sender_announce.ratchet)
-
-              // Check the DATA packet destination
-              const response_packet_check = packet_unpack(response_data)
-              console.log('  DATA packet destination_hash:', toHex(response_packet_check.destination_hash))
-
+              const lxmf_response = lxmf_build(lxmf.content, me_priv, response_destination, me_dest)
+              const response_data = build_data(lxmf_response, sender_announce.public_key, sender_announce.ratchet)
               ws.send(response_data)
 
               // Store sent message for PROOF validation
@@ -160,15 +126,11 @@ async function packetHandler(ws, me_priv, me_pub, me_dest, ratchet_priv, ratchet
                 packet_bytes: response_data,
                 sender_pub: sender_announce.public_key
               })
-              console.log(`  Sent DATA echo to ${source_hash_hex.slice(0, 16)}...`)
+              console.log(`  Echoed to ${source_hash_hex.slice(0, 16)}...`)
             } catch (e) {
-              console.log(`  Failed to echo: ${e.message}`)
+              console.log(`  Echo failed: ${e.message}`)
             }
-          } else {
-            console.log('  Cannot respond - sender has no ratchet')
           }
-        } else {
-          console.log('  For me: False')
         }
       }
 
@@ -188,8 +150,8 @@ async function packetHandler(ws, me_priv, me_pub, me_dest, ratchet_priv, ratchet
               full_hash[i] = parseInt(msg_hash.substr(i * 2, 2), 16)
             }
             const is_valid = validate_proof(packet, msg_info.sender_pub, full_hash)
-            console.log(`  Valid: ${is_valid}`)
             if (is_valid) {
+              console.log('  Valid')
               msg_to_delete = msg_hash
             }
             found = true
@@ -201,12 +163,10 @@ async function packetHandler(ws, me_priv, me_pub, me_dest, ratchet_priv, ratchet
           sent_messages.delete(msg_to_delete)
         }
 
-        if (!found) {
-          console.log('  Not for any of our sent messages')
-        }
+
       }
     } catch (e) {
-      console.log(`  Failed: ${e.message}`)
+      console.log(`  Error: ${e.message}`)
     }
   })
 

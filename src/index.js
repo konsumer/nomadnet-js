@@ -428,12 +428,7 @@ export function lxmf_parse(decrypted_data, packet_destination_hash, sender_pub) 
     const timestamp = msgpack_data[0]
     const title = msgpack_data[1]
     const content = msgpack_data[2]
-    let fields = msgpack_data.length > 3 ? msgpack_data[3] : {}
-
-    // Keep fields as-is from msgpack for proper round-trip encoding
-    if (!fields) {
-      fields = {}
-    }
+    const fields = msgpack_data.length > 3 ? msgpack_data[3] : {}
 
     // Verify LXMF signature
     const message_id = sha256(concat(packet_destination_hash, source_hash, msgpack_raw))
@@ -459,15 +454,10 @@ export function lxmf_parse(decrypted_data, packet_destination_hash, sender_pub) 
 /**
  * Build LXMF message
  */
-export function lxmf_build(content, source_priv, destination_hash, source_hash = null, timestamp = Date.now() / 1000, fields = null) {
-  // Handle null timestamp (default parameters don't work with explicit null)
-  if (timestamp === null || timestamp === undefined) {
+export function lxmf_build(content, source_priv, destination_hash, source_hash = null, timestamp = null, fields = null) {
+  if (timestamp === null) {
     timestamp = Date.now() / 1000
   }
-  if (Math.abs(timestamp - Math.floor(timestamp)) < 0.000001) {
-    timestamp = timestamp + 0.000001
-  }
-  // Use empty object for null fields to match msgpack encoding
   if (fields === null) {
     fields = {}
   }
