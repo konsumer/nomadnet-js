@@ -40,6 +40,8 @@ function toHex(bytes) {
 async function announceHandler(ws, me_priv, me_pub, me_dest, ratchet_priv, ratchet_pub, interval = 30000) {
   while (ws.readyState === WebSocket.OPEN) {
     console.log(`ANNOUNCE me ${toHex(me_dest)}`)
+    console.log(`  X25519 pub: ${toHex(me_pub.slice(0, 32))}`)
+    console.log(`  Ed25519 pub: ${toHex(me_pub.slice(32, 64))}`)
     const pkt = build_announce(me_priv, null, me_dest, ratchet_priv, ratchet_pub)
     ws.send(pkt)
     await new Promise((resolve) => setTimeout(resolve, interval))
@@ -96,7 +98,11 @@ async function packetHandler(ws, me_priv, me_pub, me_dest, ratchet_priv, ratchet
           }
 
           console.log(`  From: ${toHex(lxmf.source_hash)}`)
+          console.log(`  Timestamp: ${lxmf.timestamp}`)
           console.log(`  Content: ${lxmf.content || '(no content)'}`)
+          console.log(`  Title: ${lxmf.title}`)
+          console.log(`  Fields:`, lxmf.fields)
+          console.log(`  Valid signature: ${lxmf.valid}`)
 
           // Send PROOF back
           const proof_bytes = build_proof(packet.raw, me_priv)

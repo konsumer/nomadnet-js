@@ -4,3 +4,6 @@ storage/
 logfile
 dist/
 *.log
+
+# I play with ideas & try stuff out here
+debug/

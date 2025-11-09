@@ -1,6 +1,13 @@
 // Lightweight Reticulum library for JavaScript
 
-import { pack, unpack } from 'msgpackr'
+import { Packr, unpack } from 'msgpackr'
+
+// Configure msgpackr to match Python msgpack encoding
+// - useRecords: false - don't use msgpack extension types
+// - variableMapSize: true - use fixmap (0x80) for small maps instead of map16
+// - mapsAsObjects: true - encode objects as maps
+const packr = new Packr({ useRecords: false, variableMapSize: true, mapsAsObjects: true })
+const pack = (data) => packr.pack(data)
 
 // prettier-ignore
 import {
@@ -62,6 +69,7 @@ export const CONTEXT_LRPROOF = 0xff
 /**
  * Helper to concatenate Uint8Arrays
  */
+// TODO: move this to crypto.js
 function concat(...arrays) {
   const total = arrays.reduce((sum, arr) => sum + arr.length, 0)
   const result = new Uint8Array(total)
@@ -290,7 +298,7 @@ export function build_announce(identity_priv, identity_pub = null, destination_h
   const name_hash = sha256(new TextEncoder().encode(full_name)).slice(0, 10)
 
   // Generate random hash (10 bytes)
-  const random_hash = crypto.getRandomValues(new Uint8Array(10))
+  const random_hash = randomBytes(10)
 
   // Add ratchet if provided
   if (!ratchet_pub) {
@@ -422,13 +430,9 @@ export function lxmf_parse(decrypted_data, packet_destination_hash, sender_pub) 
     const content = msgpack_data[2]
     let fields = msgpack_data.length > 3 ? msgpack_data[3] : {}
 
-    // TODO: is this junk really needed?
-    // Convert objects to Map() to preserve msgpack encoding
-    // This is critical for signature validation when echoing messages
-    if (fields && typeof fields === 'object' && !(fields instanceof Map)) {
-      fields = new Map(Object.entries(fields))
-    } else if (!fields) {
-      fields = new Map()
+    // Keep fields as-is from msgpack for proper round-trip encoding
+    if (!fields) {
+      fields = {}
     }
 
     // Verify LXMF signature
@@ -456,22 +460,16 @@ export function lxmf_parse(decrypted_data, packet_destination_hash, sender_pub) 
  * Build LXMF message
  */
 export function lxmf_build(content, source_priv, destination_hash, source_hash = null, timestamp = Date.now() / 1000, fields = null) {
-  // TODO: is this junk really needed?
+  // Handle null timestamp (default parameters don't work with explicit null)
+  if (timestamp === null || timestamp === undefined) {
+    timestamp = Date.now() / 1000
+  }
   if (Math.abs(timestamp - Math.floor(timestamp)) < 0.000001) {
     timestamp = timestamp + 0.000001
   }
-  // Use Map() for empty fields to match Python msgpack encoding (80 vs de0000)
-  // If fields is already a Map, keep it. If it's an empty object, convert to Map.
+  // Use empty object for null fields to match msgpack encoding
   if (fields === null) {
-    fields = new Map()
-  } else if (typeof fields === 'object' && !(fields instanceof Map)) {
-    // Convert empty objects to Map to preserve encoding
-    if (Object.keys(fields).length === 0) {
-      fields = new Map()
-    } else {
-      // Non-empty object - convert to Map to preserve encoding
-      fields = new Map(Object.entries(fields))
-    }
+    fields = {}
   }
   if (source_hash === null) {
     source_hash = get_identity_destination_hash(public_identity(source_priv))

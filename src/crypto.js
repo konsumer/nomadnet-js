@@ -148,10 +148,9 @@ export function pkcs7_unpad(data) {
  * @returns {Uint8Array} Ciphertext
  */
 export function aes_cbc_encrypt(key, iv, plaintext) {
-  // Manually pad the plaintext with PKCS7
-  const padded = pkcs7_pad(plaintext, 16)
+  // @noble/ciphers handles PKCS7 padding automatically
   const cipher = cbc(key, iv)
-  return cipher.encrypt(padded)
+  return cipher.encrypt(plaintext)
 }
 
 /**
@@ -162,10 +161,9 @@ export function aes_cbc_encrypt(key, iv, plaintext) {
  * @returns {Uint8Array} Plaintext
  */
 export function aes_cbc_decrypt(key, iv, ciphertext) {
+  // @noble/ciphers handles PKCS7 unpadding automatically
   const cipher = cbc(key, iv)
-  const decrypted = cipher.decrypt(ciphertext)
-  // Manually remove PKCS7 padding
-  return pkcs7_unpad(decrypted)
+  return cipher.decrypt(ciphertext)
 }
 
 /**
