@@ -1,7 +1,7 @@
 {
   "name": "nomadnet",
   "version": "0.0.4",
-  "main": "index.js",
+  "main": "src/index.js",
   "type": "module",
   "description": "Lightweight Reticulum library for JavaScript",
   "scripts": {
@@ -15,7 +15,7 @@
     "lxmf",
     "mesh"
   ],
-  "author": "",
+  "author": "konsumer",
   "license": "MIT",
   "dependencies": {
     "@noble/ciphers": "^2.0.1",
@@ -28,5 +28,8 @@
     "pop-notify": "^1.2.1",
     "vite": "^7.2.2",
     "ws": "^8.18.0"
-  }
+  },
+  "files": [
+    "src/*.js"
+  ]
 }
